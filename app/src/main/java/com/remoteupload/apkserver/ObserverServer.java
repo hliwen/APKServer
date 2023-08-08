@@ -179,7 +179,9 @@ public class ObserverServer extends Service {
                                 int installVersionCode = getInstallAPKInfo(getApplicationContext(), remoteApkPackageName);
                                 int localVersionCode = getapkFileVersionCode(downloadPathDir + updateName, getApplicationContext());
                                 Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
-                                installSilent(downloadPathDir + updateName);
+                                if (localVersionCode > installVersionCode) {
+                                    installSilent(downloadPathDir + updateName);
+                                }
                             }
 
                             try {
@@ -430,7 +432,6 @@ public class ObserverServer extends Service {
             if (apkFile == null || !apkFile.exists()) {
                 boolean downloadSucced = startDownloadApp(appDowloadURL, servierVersion);
                 Log.d(TAG, "run: startDownloadApp downloadSucced =" + downloadSucced);
-
                 if (downloadSucced) {
                     installSilent(downloadPathDir + servierVersion + "_" + appName);
                 }
