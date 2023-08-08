@@ -61,6 +61,67 @@ public class ObserverServer extends Service {
     static String downloadPathDir = "/storage/emulated/0/Download/";
     public static final String appVersionURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/latest";
     public static final String appDowloadURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/";
+    ReceiverStoreUSB receiverStoreUSB;
+    private ExecutorService initStoreUSBThreadExecutor;
+    private boolean doning;
+
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.e(TAG, "ObserverServer onCreate: ");
+
+        wifiConnectBroadcast = new WIFIConnectBroadcast();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+        registerReceiver(wifiConnectBroadcast, filter);
+
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkRequest.Builder request = new NetworkRequest.Builder();
+        request.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        request.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
+
+        NetworkRequest build = request.build();
+        connectivityManager.requestNetwork(build, new ConnectivityManager.NetworkCallback() {
+            public void onAvailable(Network network) {
+                Log.d(TAG, "onAvailable: ");
+                netWorkConnect();
+            }
+
+            @Override
+            public void onLost(Network network) {
+                super.onLost(network);
+                Log.e(TAG, "Network  onLost: ");
+            }
+        });
+
+
+        registerStoreUSBReceiver();
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return super.onStartCommand(intent, flags, startId);
+    }
+
+    @Override
+    public void onDestroy() {
+        Log.d(TAG, "onDestroy: ");
+        super.onDestroy();
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        Log.d(TAG, "onUnbind: ");
+        return super.onUnbind(intent);
+    }
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        Log.d(TAG, "onBind: ");
+        return null;
+    }
 
     class WIFIConnectBroadcast extends BroadcastReceiver {
 
@@ -79,7 +140,6 @@ public class ObserverServer extends Service {
         }
     }
 
-    ReceiverStoreUSB receiverStoreUSB;
 
     class ReceiverStoreUSB extends BroadcastReceiver {
 
@@ -108,7 +168,6 @@ public class ObserverServer extends Service {
         initStoreUSBDevice();
     }
 
-    private ExecutorService initStoreUSBThreadExecutor;
 
     private void stopStoreUSBInitThreadExecutor() {
         Log.e(TAG, "stopStoreUSBInitThreadExecutor: ");
@@ -281,8 +340,6 @@ public class ObserverServer extends Service {
     }
 
 
-    private boolean doning;
-
     private void netWorkConnect() {
         Log.d(TAG, "netWorkConnect: ");
         if (doning) return;
@@ -291,7 +348,7 @@ public class ObserverServer extends Service {
             @Override
             public void run() {
                 if (!isAppInstalled(getApplicationContext(), remoteApkPackageName)) {
-                    getServiceVersion();
+                    serviceInstallAPK();
                 }
                 doning = false;
             }
@@ -299,39 +356,6 @@ public class ObserverServer extends Service {
 
     }
 
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        Log.e(TAG, "onCreate: ");
-
-        wifiConnectBroadcast = new WIFIConnectBroadcast();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
-        registerReceiver(wifiConnectBroadcast, filter);
-
-        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkRequest.Builder request = new NetworkRequest.Builder();
-        request.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-        request.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
-
-        NetworkRequest build = request.build();
-        connectivityManager.requestNetwork(build, new ConnectivityManager.NetworkCallback() {
-            public void onAvailable(Network network) {
-                Log.d(TAG, "onAvailable: ");
-                netWorkConnect();
-            }
-
-            @Override
-            public void onLost(Network network) {
-                super.onLost(network);
-                Log.e(TAG, "Network  onLost: ");
-            }
-        });
-
-
-        registerStoreUSBReceiver();
-    }
 
     public int getapkFileVersionCode(String absPath, Context context) {
         Log.e(TAG, "apkInfo: absPath =" + absPath);
@@ -350,30 +374,6 @@ public class ObserverServer extends Service {
             return versionCode;
         }
         return 0;
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return super.onStartCommand(intent, flags, startId);
-    }
-
-    @Override
-    public void onDestroy() {
-        Log.d(TAG, "onDestroy: ");
-        super.onDestroy();
-    }
-
-    @Override
-    public boolean onUnbind(Intent intent) {
-        Log.d(TAG, "onUnbind: ");
-        return super.onUnbind(intent);
-    }
-
-    @Nullable
-    @Override
-    public IBinder onBind(Intent intent) {
-        Log.d(TAG, "onBind: ");
-        return null;
     }
 
 
@@ -401,7 +401,7 @@ public class ObserverServer extends Service {
         return 0;
     }
 
-    private int getServiceVersion() {
+    private void serviceInstallAPK() {
 
         int servierVersion = 0;
         try {
@@ -409,7 +409,7 @@ public class ObserverServer extends Service {
             HttpURLConnection urlcon = (HttpURLConnection) url.openConnection();
             int ResponseCode = urlcon.getResponseCode();
             if (ResponseCode != 200) {
-                return 0;
+                return;
             }
 
             InputStream inputStream = urlcon.getInputStream();
@@ -429,6 +429,7 @@ public class ObserverServer extends Service {
             servierVersion = Integer.parseInt(version);
 
             File apkFile = new File(downloadPathDir + servierVersion + "_" + appName);
+
             if (apkFile == null || !apkFile.exists()) {
                 boolean downloadSucced = startDownloadApp(appDowloadURL, servierVersion);
                 Log.d(TAG, "run: startDownloadApp downloadSucced =" + downloadSucced);
@@ -441,8 +442,6 @@ public class ObserverServer extends Service {
         } catch (Exception e) {
             Log.e(TAG, "getServiceVersion: Exception =" + e);
         }
-        Log.e(TAG, "getServiceVersion: servierVersion =" + servierVersion);
-        return servierVersion;
     }
 
     public void installSilent(String path) {
@@ -523,7 +522,7 @@ public class ObserverServer extends Service {
         }
         apkFile = new File(downloadPathDir + servierVersion + "_" + appName + "_tpm");
         try {
-            URL downloadurl = new URL(downloadURL);
+            URL downloadurl = new URL(downloadURL + servierVersion);
             HttpURLConnection connection = (HttpURLConnection) downloadurl.openConnection();
             int ResponseCode = connection.getResponseCode();
             if (ResponseCode == 200 || ResponseCode == 206) {
