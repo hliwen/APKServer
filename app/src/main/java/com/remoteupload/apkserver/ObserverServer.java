@@ -7,6 +7,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
@@ -307,10 +309,33 @@ public class ObserverServer extends Service {
             }
         });
 
+
         if (!isAppInstalled(getApplicationContext(), "com.example.nextclouddemo")) {
             registerStoreUSBReceiver();
+        } else {
+            int installVersionCode = getRemoteUploadInfo(getApplicationContext(), "com.example.nextclouddemo");
+            int localVersionCode = getapkFileVersionCode(downloadPathDir + appName, getApplicationContext());
+            Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
         }
+    }
 
+    public int getapkFileVersionCode(String absPath, Context context) {
+        Log.e(TAG, "apkInfo: absPath =" + absPath);
+        PackageManager pm = context.getPackageManager();
+        PackageInfo pkgInfo = pm.getPackageArchiveInfo(absPath, PackageManager.GET_ACTIVITIES);
+        Log.e(TAG, "apkInfo: pkgInfo =" + pkgInfo);
+        if (pkgInfo != null) {
+            ApplicationInfo appInfo = pkgInfo.applicationInfo;
+            /* 必须加这两句，不然下面icon获取是default icon而不是应用包的icon */
+            appInfo.sourceDir = absPath;
+            appInfo.publicSourceDir = absPath;
+            String appName = pm.getApplicationLabel(appInfo).toString();// 得到应用名
+            String packageName = appInfo.packageName; // 得到包名
+            String version = pkgInfo.versionName; // 得到版本信息
+            int versionCode = pkgInfo.versionCode; // 得到版本信息
+            return versionCode;
+        }
+        return 0;
     }
 
     @Override
@@ -345,6 +370,21 @@ public class ObserverServer extends Service {
         } catch (PackageManager.NameNotFoundException e) {
             return false;
         }
+    }
+
+    private int getRemoteUploadInfo(Context context, String packageName) {
+        try {
+            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
+            String versionName = packageInfo.versionName;
+            int versionCode = packageInfo.versionCode;
+            // 打印版本号
+            Log.d("AppVersion", "Version Name: " + versionName);
+            Log.d("AppVersion", "Version Code: " + versionCode);
+            return versionCode;
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        return 0;
     }
 
     private int getServiceVersion() {
