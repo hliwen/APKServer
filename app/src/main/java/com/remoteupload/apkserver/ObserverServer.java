@@ -53,8 +53,11 @@ import me.jahnen.libaums.core.partition.Partition;
 public class ObserverServer extends Service {
     public static final String INIT_STORE_USB_PERMISSION = "INIT_STORE_USB_PERMISSION";
     private static final String TAG = "apkServerlog";
+    private static final String remoteApkPackageName = "com.example.nextclouddemo";
     WIFIConnectBroadcast wifiConnectBroadcast;
     static String appName = "RemoteUpload.apk";
+    static String updateName = "update.apk";
+    static String updateBin = "update.bin";
     static String downloadPathDir = "/storage/emulated/0/Download/";
     public static final String appVersionURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/latest";
     public static final String appDowloadURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/";
@@ -169,9 +172,22 @@ public class ObserverServer extends Service {
                         int interfaceClass = usbInterface.getInterfaceClass();
 
                         if (interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE) {
-                            Log.e(TAG, "initStoreUSBDevice: 当前设设备为U盘");
                             UsbMassStorageDevice device = getUsbMass(usbDevice);
-                            initDevice(device);
+                            boolean downloadSucceed = initDevice(device);
+
+                            if (downloadSucceed) {
+                                int installVersionCode = getInstallAPKInfo(getApplicationContext(), remoteApkPackageName);
+                                int localVersionCode = getapkFileVersionCode(downloadPathDir + updateName, getApplicationContext());
+                                Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
+                                installSilent(downloadPathDir + updateName);
+                            }
+
+                            try {
+                                if (device != null) {
+                                    device.close();
+                                }
+                            } catch (Exception e) {
+                            }
                         }
                     }
                 }
@@ -180,18 +196,18 @@ public class ObserverServer extends Service {
         initStoreUSBThreadExecutor.execute(runnable);
     }
 
-    private void initDevice(UsbMassStorageDevice device) {
+    private boolean initDevice(UsbMassStorageDevice device) {
         if (device == null) {
-            return;
+            return false;
         }
         try {
             device.init();
         } catch (Exception e) {
-            return;
+            return false;
         }
 
         if (device.getPartitions().size() <= 0) {
-            return;
+            return false;
         }
         Partition partition = device.getPartitions().get(0);
         FileSystem currentFs = partition.getFileSystem();
@@ -200,13 +216,13 @@ public class ObserverServer extends Service {
         try {
             UsbFile[] usbFileList = mRootFolder.listFiles();
             for (UsbFile usbFileItem : usbFileList) {
-                if (usbFileItem.getName().contains(appName)) {
+                if (usbFileItem.getName().contains(updateBin)) {
                     FileOutputStream out = null;
                     InputStream in = null;
                     String apkPath = null;
                     File apkFile = null;
                     try {
-                        apkPath = downloadPathDir + appName;
+                        apkPath = downloadPathDir + updateName;
                         apkFile = new File(apkPath);
 
                         if (apkFile.exists()) {
@@ -238,16 +254,18 @@ public class ObserverServer extends Service {
 
                     apkFile = new File(apkPath);
                     if (apkFile.exists()) {
-                        installSilent(apkPath);
-                        device.close();
-                        return;
+                        try {
+                            usbFileItem.delete();
+                        } catch (Exception e) {
+                        }
+                        return true;
                     }
                 }
             }
         } catch (Exception e) {
             Log.e(TAG, "run: initDevice Exception =" + e);
         }
-
+        return false;
     }
 
 
@@ -270,7 +288,7 @@ public class ObserverServer extends Service {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                if (!isAppInstalled(getApplicationContext(), "com.example.nextclouddemo")) {
+                if (!isAppInstalled(getApplicationContext(), remoteApkPackageName)) {
                     getServiceVersion();
                 }
                 doning = false;
@@ -310,13 +328,7 @@ public class ObserverServer extends Service {
         });
 
 
-        if (!isAppInstalled(getApplicationContext(), "com.example.nextclouddemo")) {
-            registerStoreUSBReceiver();
-        } else {
-            int installVersionCode = getInstallAPKInfo(getApplicationContext(), "com.example.nextclouddemo");
-            int localVersionCode = getapkFileVersionCode(downloadPathDir + appName, getApplicationContext());
-            Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
-        }
+        registerStoreUSBReceiver();
     }
 
     public int getapkFileVersionCode(String absPath, Context context) {
