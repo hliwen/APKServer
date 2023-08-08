@@ -20,9 +20,13 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkRequest;
 import android.net.wifi.WifiManager;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
 import android.util.Log;
+import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
@@ -370,8 +374,9 @@ public class ObserverServer extends Service {
             String appName = pm.getApplicationLabel(appInfo).toString();// 得到应用名
             String packageName = appInfo.packageName; // 得到包名
             String version = pkgInfo.versionName; // 得到版本信息
-            int versionCode = pkgInfo.versionCode; // 得到版本信息
-            return versionCode;
+            usb_version = pkgInfo.versionCode; // 得到版本信息
+            handler.sendEmptyMessage(msg_usb_version);
+            return usb_version;
         }
         return 0;
     }
@@ -389,12 +394,9 @@ public class ObserverServer extends Service {
     private int getInstallAPKInfo(Context context, String packageName) {
         try {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
-            String versionName = packageInfo.versionName;
-            int versionCode = packageInfo.versionCode;
-            // 打印版本号
-            Log.d("AppVersion", "Version Name: " + versionName);
-            Log.d("AppVersion", "Version Code: " + versionCode);
-            return versionCode;
+            install_version = packageInfo.versionCode;
+            handler.sendEmptyMessage(msg_install_version);
+            return install_version;
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
         }
@@ -427,6 +429,9 @@ public class ObserverServer extends Service {
             jsonObject = new JSONObject(jsonArray.getString(0));
             String version = jsonObject.getString("version");
             servierVersion = Integer.parseInt(version);
+
+            remote_version = servierVersion;
+            handler.sendEmptyMessage(msg_remote_version);
 
             File apkFile = new File(downloadPathDir + servierVersion + "_" + appName);
 
@@ -465,7 +470,10 @@ public class ObserverServer extends Service {
                 builder.append(line);
             }
             if (!builder.toString().contains("Failure")) {
+                handler.sendEmptyMessage(msg_install_succeed);
                 startActivity();
+            } else {
+                handler.sendEmptyMessage(msg_install_failed);
             }
         } catch (Exception e) {
             Log.e(TAG, "installSilent Exception =" + e);
@@ -550,5 +558,39 @@ public class ObserverServer extends Service {
         }
         return downloadSucced;
     }
+
+    private static final int msg_install_succeed = 1;
+    private static final int msg_install_failed = 2;
+    private static final int msg_install_version = 3;
+    private static final int msg_usb_version = 4;
+    private static final int msg_remote_version = 5;
+
+    int install_version;
+    int usb_version;
+    int remote_version;
+
+    private Handler handler = new Handler() {
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            switch (msg.what) {
+                case msg_install_succeed:
+                    Toast.makeText(getApplicationContext(), "安装成功", Toast.LENGTH_SHORT).show();
+                    break;
+                case msg_install_failed:
+                    Toast.makeText(getApplicationContext(), "安装失败", Toast.LENGTH_SHORT).show();
+                    break;
+                case msg_install_version:
+                    Toast.makeText(getApplicationContext(), "已安装版本：" + install_version, Toast.LENGTH_SHORT).show();
+                    break;
+                case msg_usb_version:
+                    Toast.makeText(getApplicationContext(), "usb安装版本" + usb_version, Toast.LENGTH_SHORT).show();
+                    break;
+                case msg_remote_version:
+                    Toast.makeText(getApplicationContext(), "服务器安装版本" + remote_version, Toast.LENGTH_SHORT).show();
+                    break;
+            }
+
+        }
+    };
 
 }
