@@ -1,11 +1,17 @@
 package com.remoteupload.apkserver;
 
+import android.annotation.SuppressLint;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.hardware.usb.UsbConstants;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbInterface;
+import android.hardware.usb.UsbManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -31,9 +37,19 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import me.jahnen.libaums.core.UsbMassStorageDevice;
+import me.jahnen.libaums.core.fs.FileSystem;
+import me.jahnen.libaums.core.fs.UsbFile;
+import me.jahnen.libaums.core.fs.UsbFileInputStream;
+import me.jahnen.libaums.core.partition.Partition;
 
 public class ObserverServer extends Service {
-
+    public static final String INIT_STORE_USB_PERMISSION = "INIT_STORE_USB_PERMISSION";
     private static final String TAG = "apkServerlog";
     WIFIConnectBroadcast wifiConnectBroadcast;
     static String appName = "RemoteUpload.apk";
@@ -56,6 +72,190 @@ public class ObserverServer extends Service {
                 }
             }
         }
+    }
+
+    ReceiverStoreUSB receiverStoreUSB;
+
+    class ReceiverStoreUSB extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action == null) return;
+            switch (action) {
+                case UsbManager.ACTION_USB_DEVICE_ATTACHED:
+                    usbConnect(intent.getParcelableExtra(UsbManager.EXTRA_DEVICE));
+                    break;
+                case INIT_STORE_USB_PERMISSION:
+                    Log.d(TAG, "StoreUSBReceiver onReceive: INIT_STORE_USB_PERMISSION");
+                    initStoreUSBDevice();
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    private void usbConnect(UsbDevice usbDevice) {
+        if (usbDevice == null) {
+            return;
+        }
+        initStoreUSBDevice();
+    }
+
+    private ExecutorService initStoreUSBThreadExecutor;
+
+    private void stopStoreUSBInitThreadExecutor() {
+        Log.e(TAG, "stopStoreUSBInitThreadExecutor: ");
+        try {
+            if (initStoreUSBThreadExecutor != null) {
+                initStoreUSBThreadExecutor.shutdown();
+            }
+        } catch (Exception e) {
+        }
+        initStoreUSBThreadExecutor = null;
+    }
+
+    private UsbMassStorageDevice getUsbMass(UsbDevice usbDevice) {
+        UsbMassStorageDevice[] storageDevices = UsbMassStorageDevice.getMassStorageDevices(getApplicationContext());
+        for (UsbMassStorageDevice device : storageDevices) {
+            if (usbDevice.equals(device.getUsbDevice())) {
+                return device;
+            }
+        }
+        return null;
+    }
+
+    public void initStoreUSBDevice() {
+
+        stopStoreUSBInitThreadExecutor();
+        initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+
+                HashMap<String, UsbDevice> connectedUSBDeviceList = usbManager.getDeviceList();
+                if (connectedUSBDeviceList == null || connectedUSBDeviceList.size() <= 0) {
+
+                    return;
+                }
+
+                Collection<UsbDevice> usbDevices = connectedUSBDeviceList.values();
+                if (usbDevices == null) {
+
+                    return;
+                }
+
+
+                for (UsbDevice usbDevice : usbDevices) {
+                    if (usbDevice == null) {
+                        continue;
+                    }
+                    if (!usbManager.hasPermission(usbDevice)) {
+                        @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(INIT_STORE_USB_PERMISSION), 0);
+                        usbManager.requestPermission(usbDevice, pendingIntent);
+                        continue;
+                    }
+
+                    int interfaceCount = usbDevice.getInterfaceCount();
+                    for (int i = 0; i < interfaceCount; i++) {
+                        UsbInterface usbInterface = usbDevice.getInterface(i);
+                        if (usbInterface == null) {
+                            continue;
+                        }
+                        int interfaceClass = usbInterface.getInterfaceClass();
+
+                        if (interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE) {
+                            Log.e(TAG, "initStoreUSBDevice: 当前设设备为U盘");
+                            UsbMassStorageDevice device = getUsbMass(usbDevice);
+                            initDevice(device);
+                        }
+                    }
+                }
+            }
+        };
+        initStoreUSBThreadExecutor.execute(runnable);
+    }
+
+    private void initDevice(UsbMassStorageDevice device) {
+        if (device == null) {
+            return;
+        }
+        try {
+            device.init();
+        } catch (Exception e) {
+            return;
+        }
+
+        if (device.getPartitions().size() <= 0) {
+            return;
+        }
+        Partition partition = device.getPartitions().get(0);
+        FileSystem currentFs = partition.getFileSystem();
+        UsbFile mRootFolder = currentFs.getRootDirectory();
+
+        try {
+            UsbFile[] usbFileList = mRootFolder.listFiles();
+            for (UsbFile usbFileItem : usbFileList) {
+                if (usbFileItem.getName().contains(appName)) {
+                    FileOutputStream out = null;
+                    InputStream in = null;
+                    String apkPath = null;
+                    File apkFile = null;
+                    try {
+                        apkPath = downloadPathDir + appName;
+                        apkFile = new File(apkPath);
+
+                        if (apkFile.exists()) {
+                            apkFile.delete();
+                        }
+                        out = new FileOutputStream(apkPath);
+                        in = new UsbFileInputStream(usbFileItem);
+                        int bytesRead = 0;
+                        byte[] buffer = new byte[currentFs.getChunkSize()];
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytesRead);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "downloadUSBCameraPictureToTFCard: Exception =" + e);
+                    } finally {
+                        try {
+                            if (out != null) {
+                                out.flush();
+                                out.close();
+                            }
+
+                            if (in != null) {
+                                in.close();
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "downloadUSBCameraPictureToTFCard : 11111 Exception =" + e);
+                        }
+                    }
+
+                    apkFile = new File(apkPath);
+                    if (apkFile.exists()) {
+                        installSilent(apkPath);
+                        device.close();
+                        return;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "run: initDevice Exception =" + e);
+        }
+
+    }
+
+
+    private void registerStoreUSBReceiver() {
+        receiverStoreUSB = new ReceiverStoreUSB();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        intentFilter.addAction(INIT_STORE_USB_PERMISSION);
+        registerReceiver(receiverStoreUSB, intentFilter);
     }
 
 
@@ -106,6 +306,10 @@ public class ObserverServer extends Service {
                 Log.e(TAG, "Network  onLost: ");
             }
         });
+
+        if (!isAppInstalled(getApplicationContext(), "com.example.nextclouddemo")) {
+            registerStoreUSBReceiver();
+        }
 
     }
 
@@ -228,6 +432,11 @@ public class ObserverServer extends Service {
     }
 
     private void startActivity() {
+
+        if (receiverStoreUSB != null) {
+            unregisterReceiver(receiverStoreUSB);
+        }
+
         DataOutputStream localDataOutputStream = null;
         try {
             Runtime runtime = Runtime.getRuntime();
