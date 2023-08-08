@@ -313,7 +313,7 @@ public class ObserverServer extends Service {
         if (!isAppInstalled(getApplicationContext(), "com.example.nextclouddemo")) {
             registerStoreUSBReceiver();
         } else {
-            int installVersionCode = getRemoteUploadInfo(getApplicationContext(), "com.example.nextclouddemo");
+            int installVersionCode = getInstallAPKInfo(getApplicationContext(), "com.example.nextclouddemo");
             int localVersionCode = getapkFileVersionCode(downloadPathDir + appName, getApplicationContext());
             Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
         }
@@ -372,7 +372,7 @@ public class ObserverServer extends Service {
         }
     }
 
-    private int getRemoteUploadInfo(Context context, String packageName) {
+    private int getInstallAPKInfo(Context context, String packageName) {
         try {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
             String versionName = packageInfo.versionName;
