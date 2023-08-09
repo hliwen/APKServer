@@ -12,16 +12,20 @@ import android.util.Log;
 
 import androidx.core.content.PermissionChecker;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity {
 
     private static final String TAG = "apkServerlog";
+
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        Log.e(TAG, "MainActivity onCreate: " );
+        Log.e(TAG, "MainActivity onCreate: ");
         String[] value = haveNoPermissions(MainActivity.this);
         if (value.length > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(value, 111);
@@ -29,8 +33,6 @@ public class MainActivity extends Activity {
 
         Intent serviceIntent = new Intent(MainActivity.this, ObserverServer.class);
         startService(serviceIntent);
-
-        finish();
     }
 
     public static String[] haveNoPermissions(Context mActivity) {

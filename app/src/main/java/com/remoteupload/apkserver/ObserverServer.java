@@ -7,7 +7,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.hardware.usb.UsbConstants;
@@ -59,10 +58,10 @@ public class ObserverServer extends Service {
     private static final String TAG = "apkServerlog";
     private static final String remoteApkPackageName = "com.example.nextclouddemo";
     WIFIConnectBroadcast wifiConnectBroadcast;
-    static String appName = "RemoteUpload.apk";
-    static String updateName = "update.apk";
-    static String updateBin = "update.bin";
-    static String downloadPathDir = "/storage/emulated/0/Download/";
+    static String appName = "remoteUpload.apk";
+    static String usbUpdateName = "update.apk";
+    static String usbUpdateBin = "update.bin";
+    static String localUpdateDir = "/storage/emulated/0/Download/";
     public static final String appVersionURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/latest";
     public static final String appDowloadURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/";
     ReceiverStoreUSB receiverStoreUSB;
@@ -103,22 +102,6 @@ public class ObserverServer extends Service {
         registerStoreUSBReceiver();
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return super.onStartCommand(intent, flags, startId);
-    }
-
-    @Override
-    public void onDestroy() {
-        Log.d(TAG, "onDestroy: ");
-        super.onDestroy();
-    }
-
-    @Override
-    public boolean onUnbind(Intent intent) {
-        Log.d(TAG, "onUnbind: ");
-        return super.onUnbind(intent);
-    }
 
     @Nullable
     @Override
@@ -128,10 +111,8 @@ public class ObserverServer extends Service {
     }
 
     class WIFIConnectBroadcast extends BroadcastReceiver {
-
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.e(TAG, "onReceive: " + intent.getAction());
             if (intent.getAction().equals(WifiManager.NETWORK_STATE_CHANGED_ACTION)) {
                 NetworkInfo info = intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO);
                 if (info.getState().equals(NetworkInfo.State.CONNECTED)) {
@@ -144,16 +125,24 @@ public class ObserverServer extends Service {
         }
     }
 
+    private void registerStoreUSBReceiver() {
+        receiverStoreUSB = new ReceiverStoreUSB();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        intentFilter.addAction(INIT_STORE_USB_PERMISSION);
+        registerReceiver(receiverStoreUSB, intentFilter);
+    }
+
 
     class ReceiverStoreUSB extends BroadcastReceiver {
-
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (action == null) return;
             switch (action) {
                 case UsbManager.ACTION_USB_DEVICE_ATTACHED:
-                    usbConnect(intent.getParcelableExtra(UsbManager.EXTRA_DEVICE));
+                    initStoreUSBDevice();
                     break;
                 case INIT_STORE_USB_PERMISSION:
                     Log.d(TAG, "StoreUSBReceiver onReceive: INIT_STORE_USB_PERMISSION");
@@ -163,13 +152,6 @@ public class ObserverServer extends Service {
                     break;
             }
         }
-    }
-
-    private void usbConnect(UsbDevice usbDevice) {
-        if (usbDevice == null) {
-            return;
-        }
-        initStoreUSBDevice();
     }
 
 
@@ -202,19 +184,15 @@ public class ObserverServer extends Service {
             @Override
             public void run() {
                 UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-
                 HashMap<String, UsbDevice> connectedUSBDeviceList = usbManager.getDeviceList();
                 if (connectedUSBDeviceList == null || connectedUSBDeviceList.size() <= 0) {
-
                     return;
                 }
 
                 Collection<UsbDevice> usbDevices = connectedUSBDeviceList.values();
                 if (usbDevices == null) {
-
                     return;
                 }
-
 
                 for (UsbDevice usbDevice : usbDevices) {
                     if (usbDevice == null) {
@@ -226,32 +204,93 @@ public class ObserverServer extends Service {
                         continue;
                     }
 
-                    int interfaceCount = usbDevice.getInterfaceCount();
-                    for (int i = 0; i < interfaceCount; i++) {
+
+                    for (int i = 0; i < usbDevice.getInterfaceCount(); i++) {
                         UsbInterface usbInterface = usbDevice.getInterface(i);
                         if (usbInterface == null) {
                             continue;
                         }
-                        int interfaceClass = usbInterface.getInterfaceClass();
 
-                        if (interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE) {
-                            UsbMassStorageDevice device = getUsbMass(usbDevice);
-                            boolean downloadSucceed = initDevice(device);
-
-                            if (downloadSucceed) {
-                                int installVersionCode = getInstallAPKInfo(getApplicationContext(), remoteApkPackageName);
-                                int localVersionCode = getapkFileVersionCode(downloadPathDir + updateName, getApplicationContext());
-                                Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + localVersionCode);
-                                if (localVersionCode > installVersionCode) {
-                                    installSilent(downloadPathDir + updateName);
-                                }
-                            }
-
+                        if (usbInterface.getInterfaceClass() == UsbConstants.USB_CLASS_MASS_STORAGE) {
                             try {
-                                if (device != null) {
-                                    device.close();
+                                UsbMassStorageDevice device = getUsbMass(usbDevice);
+                                device.init();
+                                if (device.getPartitions().size() > 0) {
+                                    Partition partition = device.getPartitions().get(0);
+                                    FileSystem currentFs = partition.getFileSystem();
+                                    UsbFile mRootFolder = currentFs.getRootDirectory();
+                                    UsbFile[] usbFileList = mRootFolder.listFiles();
+
+                                    for (UsbFile usbFileItem : usbFileList) {
+                                        if (usbFileItem.getName().contains(usbUpdateBin)) {
+                                            FileOutputStream out = null;
+                                            InputStream in = null;
+
+
+                                            String apkLocalPath = localUpdateDir + usbUpdateName;
+                                            String apkLocalPathTpm = localUpdateDir + usbUpdateName + ".tpm";
+                                            File apkLocalFile = new File(apkLocalPath);
+                                            File apkLocalFileTpm = new File(apkLocalPathTpm);
+
+                                            if (apkLocalFile.exists()) {
+                                                apkLocalFile.delete();
+                                            }
+
+                                            if (apkLocalFileTpm.exists()) {
+                                                apkLocalFileTpm.delete();
+                                            }
+
+                                            try {
+                                                out = new FileOutputStream(apkLocalPathTpm);
+                                                in = new UsbFileInputStream(usbFileItem);
+                                                int bytesRead = 0;
+                                                byte[] buffer = new byte[currentFs.getChunkSize()];
+                                                while ((bytesRead = in.read(buffer)) != -1) {
+                                                    out.write(buffer, 0, bytesRead);
+                                                }
+                                                apkLocalFileTpm.renameTo(apkLocalFile);
+
+                                            } catch (Exception e) {
+
+                                            } finally {
+                                                try {
+                                                    if (out != null) {
+                                                        out.flush();
+                                                        out.close();
+                                                    }
+
+                                                    if (in != null) {
+                                                        in.close();
+                                                    }
+                                                } catch (Exception e) {
+
+                                                }
+                                            }
+
+
+                                            if (apkLocalFile != null && apkLocalFile.exists()) {
+                                                usbFileItem.delete();
+                                                try {
+                                                    device.close();
+                                                } catch (Exception e) {
+
+                                                }
+
+                                                int installVersionCode = getInstallVersionCode(getApplicationContext(), remoteApkPackageName);
+                                                int apkFileVersionCode = getapkFileVersionCode(apkLocalPath, getApplicationContext());
+                                                Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + apkFileVersionCode);
+
+                                                if (apkFileVersionCode > installVersionCode) {
+                                                    installSilent(localUpdateDir + usbUpdateName);
+                                                }
+                                                return;
+                                            }
+                                        }
+                                    }
                                 }
+                                device.close();
                             } catch (Exception e) {
+
                             }
                         }
                     }
@@ -259,88 +298,6 @@ public class ObserverServer extends Service {
             }
         };
         initStoreUSBThreadExecutor.execute(runnable);
-    }
-
-    private boolean initDevice(UsbMassStorageDevice device) {
-        if (device == null) {
-            return false;
-        }
-        try {
-            device.init();
-        } catch (Exception e) {
-            return false;
-        }
-
-        if (device.getPartitions().size() <= 0) {
-            return false;
-        }
-        Partition partition = device.getPartitions().get(0);
-        FileSystem currentFs = partition.getFileSystem();
-        UsbFile mRootFolder = currentFs.getRootDirectory();
-
-        try {
-            UsbFile[] usbFileList = mRootFolder.listFiles();
-            for (UsbFile usbFileItem : usbFileList) {
-                if (usbFileItem.getName().contains(updateBin)) {
-                    FileOutputStream out = null;
-                    InputStream in = null;
-                    String apkPath = null;
-                    File apkFile = null;
-                    try {
-                        apkPath = downloadPathDir + updateName;
-                        apkFile = new File(apkPath);
-
-                        if (apkFile.exists()) {
-                            apkFile.delete();
-                        }
-                        out = new FileOutputStream(apkPath);
-                        in = new UsbFileInputStream(usbFileItem);
-                        int bytesRead = 0;
-                        byte[] buffer = new byte[currentFs.getChunkSize()];
-                        while ((bytesRead = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, bytesRead);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "downloadUSBCameraPictureToTFCard: Exception =" + e);
-                    } finally {
-                        try {
-                            if (out != null) {
-                                out.flush();
-                                out.close();
-                            }
-
-                            if (in != null) {
-                                in.close();
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "downloadUSBCameraPictureToTFCard : 11111 Exception =" + e);
-                        }
-                    }
-
-                    apkFile = new File(apkPath);
-                    if (apkFile.exists()) {
-                        try {
-                            usbFileItem.delete();
-                        } catch (Exception e) {
-                        }
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "run: initDevice Exception =" + e);
-        }
-        return false;
-    }
-
-
-    private void registerStoreUSBReceiver() {
-        receiverStoreUSB = new ReceiverStoreUSB();
-        IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
-        intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        intentFilter.addAction(INIT_STORE_USB_PERMISSION);
-        registerReceiver(receiverStoreUSB, intentFilter);
     }
 
 
@@ -352,7 +309,7 @@ public class ObserverServer extends Service {
             @Override
             public void run() {
                 if (!isAppInstalled(getApplicationContext(), remoteApkPackageName)) {
-                    serviceInstallAPK();
+                    networkCheckUpdate();
                 }
                 doning = false;
             }
@@ -361,19 +318,22 @@ public class ObserverServer extends Service {
     }
 
 
-    public int getapkFileVersionCode(String absPath, Context context) {
-        Log.e(TAG, "apkInfo: absPath =" + absPath);
+    private int getInstallVersionCode(Context context, String packageName) {
+        try {
+            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
+            install_version = packageInfo.versionCode;
+            handler.sendEmptyMessage(msg_install_version);
+            return install_version;
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    public int getapkFileVersionCode(String apkPath, Context context) {
         PackageManager pm = context.getPackageManager();
-        PackageInfo pkgInfo = pm.getPackageArchiveInfo(absPath, PackageManager.GET_ACTIVITIES);
-        Log.e(TAG, "apkInfo: pkgInfo =" + pkgInfo);
+        PackageInfo pkgInfo = pm.getPackageArchiveInfo(apkPath, PackageManager.GET_ACTIVITIES);
         if (pkgInfo != null) {
-            ApplicationInfo appInfo = pkgInfo.applicationInfo;
-            /* 必须加这两句，不然下面icon获取是default icon而不是应用包的icon */
-            appInfo.sourceDir = absPath;
-            appInfo.publicSourceDir = absPath;
-            String appName = pm.getApplicationLabel(appInfo).toString();// 得到应用名
-            String packageName = appInfo.packageName; // 得到包名
-            String version = pkgInfo.versionName; // 得到版本信息
             usb_version = pkgInfo.versionCode; // 得到版本信息
             handler.sendEmptyMessage(msg_usb_version);
             return usb_version;
@@ -391,21 +351,8 @@ public class ObserverServer extends Service {
         }
     }
 
-    private int getInstallAPKInfo(Context context, String packageName) {
-        try {
-            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
-            install_version = packageInfo.versionCode;
-            handler.sendEmptyMessage(msg_install_version);
-            return install_version;
-        } catch (PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
-        }
-        return 0;
-    }
 
-    private void serviceInstallAPK() {
-
-        int servierVersion = 0;
+    private void networkCheckUpdate() {
         try {
             URL url = new URL(appVersionURL);
             HttpURLConnection urlcon = (HttpURLConnection) url.openConnection();
@@ -428,21 +375,46 @@ public class ObserverServer extends Service {
             JSONArray jsonArray = new JSONArray(jsonObject.getString("data"));
             jsonObject = new JSONObject(jsonArray.getString(0));
             String version = jsonObject.getString("version");
-            servierVersion = Integer.parseInt(version);
-
-            remote_version = servierVersion;
+            remote_version = Integer.parseInt(version);
             handler.sendEmptyMessage(msg_remote_version);
 
-            File apkFile = new File(downloadPathDir + servierVersion + "_" + appName);
+            String apkPath = localUpdateDir + remote_version + "_" + appName;
+            File apkFile = new File(apkPath);
+
+            String apkPathTpm = localUpdateDir + remote_version + "_" + appName + "_tpm";
+            File apkFileTpm = new File(apkPathTpm);
 
             if (apkFile == null || !apkFile.exists()) {
-                boolean downloadSucced = startDownloadApp(appDowloadURL, servierVersion);
-                Log.d(TAG, "run: startDownloadApp downloadSucced =" + downloadSucced);
-                if (downloadSucced) {
-                    installSilent(downloadPathDir + servierVersion + "_" + appName);
+                if (apkFileTpm != null && apkFileTpm.exists()) {
+                    apkFileTpm.delete();
+                }
+                try {
+                    URL downloadurl = new URL(appDowloadURL + remote_version);
+                    HttpURLConnection connection = (HttpURLConnection) downloadurl.openConnection();
+                    ResponseCode = connection.getResponseCode();
+                    if (ResponseCode == 200 || ResponseCode == 206) {
+                        InputStream downloadInputStream = connection.getInputStream();
+                        FileOutputStream downloadFileOutputStream = new FileOutputStream(apkFile);
+                        byte[] dowloadbuffer = new byte[2048 * 8];
+                        int lenght;
+                        while ((lenght = downloadInputStream.read(dowloadbuffer)) != -1) {
+                            downloadFileOutputStream.write(dowloadbuffer, 0, lenght);
+                        }
+                        downloadFileOutputStream.flush();
+                        downloadInputStream.close();
+                        downloadFileOutputStream.close();
+                        apkFileTpm.renameTo(apkFile);
+                    } else {
+
+                    }
+                } catch (Exception e) {
+
+                }
+                if (apkFile.exists()) {
+                    installSilent(apkPath);
                 }
             } else {
-                installSilent(downloadPathDir + servierVersion + "_" + appName);
+                installSilent(apkPath);
             }
         } catch (Exception e) {
             Log.e(TAG, "getServiceVersion: Exception =" + e);
@@ -521,43 +493,6 @@ public class ObserverServer extends Service {
         }
     }
 
-    private boolean startDownloadApp(String downloadURL, int servierVersion) {
-        Log.e(TAG, "startDownloadApp: servierVersion =" + servierVersion);
-        boolean downloadSucced = false;
-        File apkFile = new File(downloadPathDir + servierVersion + "_" + appName + "_tpm");
-        if (apkFile != null && apkFile.exists()) {
-            apkFile.delete();
-        }
-        apkFile = new File(downloadPathDir + servierVersion + "_" + appName + "_tpm");
-        try {
-            URL downloadurl = new URL(downloadURL + servierVersion);
-            HttpURLConnection connection = (HttpURLConnection) downloadurl.openConnection();
-            int ResponseCode = connection.getResponseCode();
-            if (ResponseCode == 200 || ResponseCode == 206) {
-                InputStream downloadInputStream = connection.getInputStream();
-                FileOutputStream downloadFileOutputStream = new FileOutputStream(apkFile);
-                byte[] buffer = new byte[2048 * 8];
-                int lenght;
-                while ((lenght = downloadInputStream.read(buffer)) != -1) {
-                    downloadFileOutputStream.write(buffer, 0, lenght);
-                }
-                downloadFileOutputStream.flush();
-                downloadInputStream.close();
-                downloadFileOutputStream.close();
-                downloadSucced = true;
-
-                File apkFileA = new File(downloadPathDir + servierVersion + "_" + appName);
-                apkFile.renameTo(apkFileA);
-
-            } else {
-
-            }
-        } catch (Exception e) {
-
-            Log.d(TAG, "startDownloadApp: e =" + e);
-        }
-        return downloadSucced;
-    }
 
     private static final int msg_install_succeed = 1;
     private static final int msg_install_failed = 2;
