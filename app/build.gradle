@@ -19,8 +19,8 @@ android {
         applicationId "com.remoteupload.apkserver"
         minSdk 21
         targetSdk 21
-        versionCode 1
-        versionName "1.0"
+        versionCode 230922
+        versionName "1.0.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -60,6 +60,9 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.0'
+    implementation 'org.greenrobot:eventbus:3.3.1'
+
 
     implementation 'me.jahnen.libaums:core:0.10.0'
     constraints {
