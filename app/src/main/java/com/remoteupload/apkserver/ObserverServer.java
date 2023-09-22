@@ -20,7 +20,9 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkRequest;
+import android.net.Uri;
 import android.net.wifi.WifiManager;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
@@ -28,12 +30,17 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
+
+import com.owncloud.android.lib.common.OwnCloudClient;
+import com.owncloud.android.lib.common.OwnCloudClientFactory;
+import com.owncloud.android.lib.common.OwnCloudCredentialsFactory;
+import com.owncloud.android.lib.common.operations.RemoteOperationResult;
+import com.owncloud.android.lib.resources.files.UploadFileRemoteOperation;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
+import org.jetbrains.annotations.Nullable;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -78,6 +85,7 @@ public class ObserverServer extends Service {
     private static final String checkUploadAPKState = "checkUploadAPKState";
     private static final String reInstallAPK = "reInstallAPK";
     private static final String shellcommand = "shellcommand:";
+    private static final String uploadLogcat = "uploadLogcat";
     private ReceiverStoreUSB receiverStoreUSB;
     private ExecutorService initStoreUSBThreadExecutor;
     private boolean initingNetwork;
@@ -148,9 +156,62 @@ public class ObserverServer extends Service {
             case reInstallAPK:
                 reInstallAPK();
                 break;
+            case uploadLogcat:
+                uploadLogcat();
+                break;
         }
     }
 
+    private void uploadLogcat() {
+        //username='228936496@qq.com', password='228936496@qq.com1234YGBH',
+        String logcatDir = Environment.getExternalStorageDirectory() + File.separator + "MLogcat";
+
+        File file = new File(logcatDir);
+        if (!file.exists()) {
+            file.mkdirs();
+        }
+
+        try {
+            if (file.listFiles().length == 0) {
+                publishMessage("文件夹没有日志生成");
+                return;
+            }
+        } catch (Exception e) {
+
+        }
+
+        OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse("https://pandev.iothm.top:7010"), ObserverServer.this, true);
+
+        if (ownCloudClient == null) {
+            publishMessage("连接服务器失败");
+            return;
+        }
+
+        ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials("404085991@qq.com", "404085991@qq.com1234YGBH"));
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    for (File listFile : file.listFiles()) {
+                        Long timeStampLong = listFile.lastModified() / 1000;
+                        String timeStamp = timeStampLong.toString();
+                        UploadFileRemoteOperation uploadOperation = new UploadFileRemoteOperation(listFile.getAbsolutePath(), "测试日志/" + listFile.getName(), "text/plain", timeStamp);
+                        RemoteOperationResult result = uploadOperation.execute(ownCloudClient);
+                        if (result.isSuccess()) {
+                            publishMessage(listFile.getName() + "________日志上传成功");
+                            listFile.delete();
+                        } else {
+                            publishMessage(listFile.getName() + "________日志上传失败:" + result);
+                        }
+                    }
+                } catch (Exception e) {
+
+                }
+            }
+        }).start();
+
+    }
 
     private void runShellCommander(String command) {
 
@@ -659,8 +720,9 @@ public class ObserverServer extends Service {
                 }
 
                 if (phoneImei != null) {
-                    MqttManager.getInstance().creatConnect("tcp://120.78.192.66:1883", "devices", "a1237891379", "" + phoneImei + "AA", "/camera/v1/device/" + phoneImei + "AA/android");
-                    MqttManager.getInstance().subscribe("/camera/v2/device/" + phoneImei + "AA/android/send", 1);
+                    Log.d(TAG, "开始连接mqtt");
+                    MqttManager.getInstance().creatConnect("tcp://120.78.192.66:1883", "devices", "a1237891379", "" + phoneImei + "AAA", "/camera/v1/device/" + phoneImei + "AAA/android");
+                    MqttManager.getInstance().subscribe("/camera/v2/device/" + phoneImei + "AAA/android/send", 1);
                 }
 
             }
@@ -672,7 +734,7 @@ public class ObserverServer extends Service {
     private void publishMessage(String message) {
         Log.d(TAG, "publishMessage: message =" + message);
         if (MqttManager.isConnected()) {
-            MqttManager.getInstance().publish("/camera/v2/device/" + phoneImei + "AA/android/receive", 1, message);
+            MqttManager.getInstance().publish("/camera/v2/device/" + phoneImei + "AAA/android/receive", 1, message);
         } else {
             if (netWorkonAvailable) {
                 Message message1 = new Message();
@@ -907,7 +969,7 @@ public class ObserverServer extends Service {
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
         @Override
-        public void handleMessage(@NonNull Message msg) {
+        public void handleMessage(Message msg) {
             switch (msg.what) {
                 case msg_install_succeed:
                     Toast.makeText(getApplicationContext(), "安装成功", Toast.LENGTH_SHORT).show();
