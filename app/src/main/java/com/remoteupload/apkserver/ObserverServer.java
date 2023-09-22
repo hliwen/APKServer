@@ -213,30 +213,41 @@ public class ObserverServer extends Service {
 
     }
 
-    private void runShellCommander(String command) {
 
-        DataOutputStream localDataOutputStream = null;
-        try {
-            command = command.substring(shellcommand.length());
-            Runtime runtime = Runtime.getRuntime();
-            Process process = runtime.exec("su");
-            OutputStream localOutputStream = process.getOutputStream();
-            localDataOutputStream = new DataOutputStream(localOutputStream);
-            localDataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
-            localDataOutputStream.flush();
-            localDataOutputStream.writeBytes("exit\n");
-            localDataOutputStream.flush();
-        } catch (Exception e) {
+    private String command;
 
-        } finally {
-            try {
-                if (localDataOutputStream != null) {
-                    localDataOutputStream.close();
+    private void runShellCommander(String message) {
+        command = message;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                DataOutputStream dataOutputStream = null;
+                try {
+
+                    Process process = Runtime.getRuntime().exec("su");
+                    dataOutputStream = new DataOutputStream(process.getOutputStream());
+
+                    command = command.substring(shellcommand.length());
+                    publishMessage("runShellCommander command：" + command);
+
+                    dataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
+                    dataOutputStream.flush();
+                    dataOutputStream.writeBytes("exit\n");
+                    dataOutputStream.flush();
+
+                } catch (Exception e) {
+                    publishMessage("runShellCommander 异常：" + e);
+                } finally {
+                    try {
+                        if (dataOutputStream != null) {
+                            dataOutputStream.close();
+                        }
+                    } catch (Exception e) {
+                        publishMessage("runShellCommander 异常：" + e);
+                    }
                 }
-            } catch (IOException e) {
-
             }
-        }
+        }).start();
     }
 
     private void reInstallAPK() {
@@ -308,24 +319,23 @@ public class ObserverServer extends Service {
 
     private void uninstallapk() {
         Process process = null;
-        DataOutputStream os = null;
+        DataOutputStream dataOutputStream = null;
         try {
             process = Runtime.getRuntime().exec("su");
-            os = new DataOutputStream(process.getOutputStream());
-
-            Log.d(TAG, "installSilent:1111 ");
+            dataOutputStream = new DataOutputStream(process.getOutputStream());
 
             String command = "pm uninstall com.example.nextclouddemo" + "\n";
-            os.write(command.getBytes(Charset.forName("utf-8")));
-            os.flush();
-            os.writeBytes("exit\n");
-            os.flush();
+
+            dataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
+            dataOutputStream.flush();
+            dataOutputStream.writeBytes("exit\n");
+            dataOutputStream.flush();
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
             try {
-                if (os != null) {
-                    os.close();
+                if (dataOutputStream != null) {
+                    dataOutputStream.close();
                 }
             } catch (Exception e) {
             }
@@ -878,15 +888,17 @@ public class ObserverServer extends Service {
     public boolean installSilent(String path) {
         boolean installResult = false;
         BufferedReader es = null;
-        DataOutputStream os = null;
+        DataOutputStream dataOutputStream = null;
         try {
             Process process = Runtime.getRuntime().exec("su");
-            os = new DataOutputStream(process.getOutputStream());
+            dataOutputStream = new DataOutputStream(process.getOutputStream());
+
             String command = "pm install -r " + path + "\n";
-            os.write(command.getBytes(Charset.forName("utf-8")));
-            os.flush();
-            os.writeBytes("exit\n");
-            os.flush();
+
+            dataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
+            dataOutputStream.flush();
+            dataOutputStream.writeBytes("exit\n");
+            dataOutputStream.flush();
 
             process.waitFor();
             es = new BufferedReader(new InputStreamReader(process.getErrorStream()));
@@ -909,8 +921,8 @@ public class ObserverServer extends Service {
             Log.e(TAG, "installSilent Exception =" + e);
         } finally {
             try {
-                if (os != null) {
-                    os.close();
+                if (dataOutputStream != null) {
+                    dataOutputStream.close();
                 }
                 if (es != null) {
                     es.close();
@@ -928,22 +940,22 @@ public class ObserverServer extends Service {
             unregisterReceiver(receiverStoreUSB);
         }
 
-        DataOutputStream localDataOutputStream = null;
+        DataOutputStream dataOutputStream = null;
         try {
-            Runtime runtime = Runtime.getRuntime();
-            Process process = runtime.exec("su");
-            OutputStream localOutputStream = process.getOutputStream();
-            localDataOutputStream = new DataOutputStream(localOutputStream);
+            Process process = Runtime.getRuntime().exec("su");
+            dataOutputStream = new DataOutputStream(process.getOutputStream());
 
             String command = "sleep 5 && am start -W -n com.example.nextclouddemo/com.example.nextclouddemo.MainActivity";
-            localDataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
-            localDataOutputStream.flush();
+
+            dataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
+            dataOutputStream.flush();
+
         } catch (Exception e) {
 
         } finally {
             try {
-                if (localDataOutputStream != null) {
-                    localDataOutputStream.close();
+                if (dataOutputStream != null) {
+                    dataOutputStream.close();
                 }
 
             } catch (IOException e) {
