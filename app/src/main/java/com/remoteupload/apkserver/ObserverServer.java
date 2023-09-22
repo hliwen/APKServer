@@ -280,6 +280,7 @@ public class ObserverServer extends Service {
         List<ActivityManager.RunningAppProcessInfo> runningProcesses = activityManager.getRunningAppProcesses();
 
         for (ActivityManager.RunningAppProcessInfo processInfo : runningProcesses) {
+            Log.d(TAG, "checkUploadAPKState: processInfoName =" + processInfo.processName);
             if (processInfo.processName.equals(remoteApkPackageName)) {
                 apkIsRuning = true;
                 break;
