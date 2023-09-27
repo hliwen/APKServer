@@ -35,6 +35,7 @@ import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientFactory;
 import com.owncloud.android.lib.common.OwnCloudCredentialsFactory;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
+import com.owncloud.android.lib.resources.files.DownloadFileRemoteOperation;
 import com.owncloud.android.lib.resources.files.UploadFileRemoteOperation;
 
 import org.greenrobot.eventbus.EventBus;
@@ -68,7 +69,7 @@ import me.jahnen.libaums.core.fs.UsbFileInputStream;
 import me.jahnen.libaums.core.partition.Partition;
 
 public class ObserverServer extends Service {
-    public static final String INIT_STORE_USB_PERMISSION = "INIT_STORE_USB_PERMISSION";
+    public static final String GET_STORE_USB_PERMISSION = "GET_STORE_USB_PERMISSION";
     private static final String TAG = "apkServerlog";
     private static final String remoteApkPackageName = "com.example.nextclouddemo";
     WIFIConnectBroadcast wifiConnectBroadcast;
@@ -123,7 +124,6 @@ public class ObserverServer extends Service {
                 handler.sendEmptyMessage(msg_network_dissconnect);
             }
         });
-
 
         registerStoreUSBReceiver();
     }
@@ -228,13 +228,10 @@ public class ObserverServer extends Service {
                     dataOutputStream = new DataOutputStream(process.getOutputStream());
 
                     command = command.substring(shellcommand.length());
-                    publishMessage("runShellCommander command：" + command);
+                    publishMessage("runShellCommander command:" + command);
 
                     dataOutputStream.write(command.getBytes(Charset.forName("utf-8")));
                     dataOutputStream.flush();
-                    dataOutputStream.writeBytes("exit\n");
-                    dataOutputStream.flush();
-
                 } catch (Exception e) {
                     publishMessage("runShellCommander 异常：" + e);
                 } finally {
@@ -252,69 +249,53 @@ public class ObserverServer extends Service {
 
     private void reInstallAPK() {
 
-        try {
-            String apkPath = localUpdateDir + remote_version + "_" + appName;
-            File apkFile = new File(apkPath);
 
-            String apkPathTpm = localUpdateDir + remote_version + "_" + appName + "_tpm";
-            File apkFileTpm = new File(apkPathTpm);
+        String apkPath = Environment.getExternalStorageDirectory() + File.separator + "测试日志/app-release.apk";
+        File apkFile = new File(apkPath);
+        if (apkFile != null && apkFile.exists()) {
+            apkFile.delete();
+        }
 
-            if (apkFile == null || !apkFile.exists()) {
-                if (apkFileTpm != null && apkFileTpm.exists()) {
-                    apkFileTpm.delete();
-                }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
                 try {
+                    OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse("https://pandev.iothm.top:7010"), ObserverServer.this, true);
+                    if (ownCloudClient == null) {
+                        publishMessage("连接服务器失败");
+                        return;
+                    }
+
+
                     publishMessage("开始下载");
-                    URL downloadurl = new URL(appDowloadURL + remote_version);
-                    HttpURLConnection connection = (HttpURLConnection) downloadurl.openConnection();
-                    int ResponseCode = connection.getResponseCode();
-                    if (ResponseCode == 200 || ResponseCode == 206) {
-                        InputStream downloadInputStream = connection.getInputStream();
-                        FileOutputStream downloadFileOutputStream = new FileOutputStream(apkFile);
-                        byte[] dowloadbuffer = new byte[2048 * 8];
-                        int lenght;
-                        while ((lenght = downloadInputStream.read(dowloadbuffer)) != -1) {
-                            downloadFileOutputStream.write(dowloadbuffer, 0, lenght);
+                    ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials("404085991@qq.com", "404085991@qq.com1234YGBH"));
+
+                    DownloadFileRemoteOperation downloadFileRemoteOperation = new DownloadFileRemoteOperation("测试日志/app-release.apk", Environment.getExternalStorageDirectory() + File.separator);
+                    RemoteOperationResult result = downloadFileRemoteOperation.execute(ownCloudClient);
+                    Log.e(TAG, "reInstallAPK: result =" + result);
+                    if (result.isSuccess()) {
+                        publishMessage("开始安装");
+                        boolean succeed = installSilent(apkPath);
+                        if (!succeed) {
+                            publishMessage("安装失败");
+                            uninstallapk();
+                            networkCheckUpdate();
+                        } else {
+                            publishMessage("安装成功");
                         }
-                        downloadFileOutputStream.flush();
-                        downloadInputStream.close();
-                        downloadFileOutputStream.close();
-                        apkFileTpm.renameTo(apkFile);
-                        publishMessage("下载成功");
+
                     } else {
                         publishMessage("下载失败");
                     }
+
                 } catch (Exception e) {
-
-                }
-                if (apkFile.exists()) {
-                    publishMessage("开始安装");
-                    boolean succeed = installSilent(apkPath);
-                    if (!succeed) {
-                        publishMessage("安装失败");
-                        uninstallapk();
-                        networkCheckUpdate();
-                    } else {
-                        publishMessage("安装成功");
-                    }
-                } else {
-                    publishMessage("下载失败");
-                }
-            } else {
-                publishMessage("开始安装");
-                boolean succeed = installSilent(apkPath);
-
-                if (!succeed) {
-                    publishMessage("安装失败");
-                    uninstallapk();
-                    networkCheckUpdate();
-                } else {
-                    publishMessage("安装成功");
+                    Log.e(TAG, "getServiceVersion: Exception =" + e);
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "getServiceVersion: Exception =" + e);
-        }
+        }).start();
+
+
     }
 
     private void uninstallapk() {
@@ -349,7 +330,7 @@ public class ObserverServer extends Service {
 
         ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         List<ActivityManager.RunningAppProcessInfo> runningProcesses = activityManager.getRunningAppProcesses();
-
+        Log.e(TAG, "checkUploadAPKState: runningProcesses =" + runningProcesses.size());
         for (ActivityManager.RunningAppProcessInfo processInfo : runningProcesses) {
             Log.d(TAG, "checkUploadAPKState: processInfoName =" + processInfo.processName);
             if (processInfo.processName.equals(remoteApkPackageName)) {
@@ -439,8 +420,9 @@ public class ObserverServer extends Service {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        intentFilter.addAction(INIT_STORE_USB_PERMISSION);
+        intentFilter.addAction(GET_STORE_USB_PERMISSION);
         registerReceiver(receiverStoreUSB, intentFilter);
+        initStoreUSBDevice();
     }
 
 
@@ -453,7 +435,7 @@ public class ObserverServer extends Service {
                 case UsbManager.ACTION_USB_DEVICE_ATTACHED:
                     initStoreUSBDevice();
                     break;
-                case INIT_STORE_USB_PERMISSION:
+                case GET_STORE_USB_PERMISSION:
                     Log.d(TAG, "StoreUSBReceiver onReceive: INIT_STORE_USB_PERMISSION");
                     initStoreUSBDevice();
                     break;
@@ -468,7 +450,7 @@ public class ObserverServer extends Service {
         Log.e(TAG, "stopStoreUSBInitThreadExecutor: ");
         try {
             if (initStoreUSBThreadExecutor != null) {
-                initStoreUSBThreadExecutor.shutdown();
+                initStoreUSBThreadExecutor.shutdownNow();
             }
         } catch (Exception e) {
         }
@@ -486,6 +468,7 @@ public class ObserverServer extends Service {
     }
 
     public void initStoreUSBDevice() {
+        Log.d(TAG, "initStoreUSBDevice: ");
 
         stopStoreUSBInitThreadExecutor();
         initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
@@ -508,167 +491,185 @@ public class ObserverServer extends Service {
                         continue;
                     }
                     String productName = usbDevice.getProductName();
-                    if (productName == null || productName.contains("USB Storage")) {
+                    if (productName == null || !productName.contains("USB Storage")) {
                         continue;
                     }
 
                     if (!usbManager.hasPermission(usbDevice)) {
-                        @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(INIT_STORE_USB_PERMISSION), 0);
+                        Log.d(TAG, "run: hasPermission =false ," + usbDevice.getProductName());
+                        @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(GET_STORE_USB_PERMISSION), 0);
                         usbManager.requestPermission(usbDevice, pendingIntent);
                         continue;
                     }
 
-
-                    for (int i = 0; i < usbDevice.getInterfaceCount(); i++) {
-                        UsbInterface usbInterface = usbDevice.getInterface(i);
-                        if (usbInterface == null) {
-                            continue;
-                        }
-
-                        if (usbInterface.getInterfaceClass() == UsbConstants.USB_CLASS_MASS_STORAGE) {
-                            try {
-                                UsbMassStorageDevice device = getUsbMass(usbDevice);
-                                device.init();
-                                if (device.getPartitions().size() > 0) {
-                                    Partition partition = device.getPartitions().get(0);
-                                    FileSystem currentFs = partition.getFileSystem();
-                                    UsbFile mRootFolder = currentFs.getRootDirectory();
-                                    UsbFile[] usbFileList = mRootFolder.listFiles();
-
-                                    boolean hasUpdateBin = false;
-                                    boolean hasSN = false;
-
-                                    for (UsbFile usbFileItem : usbFileList) {
-                                        if (usbFileItem.getName().contains(usbUpdateBin)) {
-                                            FileOutputStream out = null;
-                                            InputStream in = null;
-
-                                            String apkLocalPath = localUpdateDir + usbUpdateName;
-                                            String apkLocalPathTpm = localUpdateDir + usbUpdateName + ".tpm";
-                                            File apkLocalFile = new File(apkLocalPath);
-                                            File apkLocalFileTpm = new File(apkLocalPathTpm);
-
-                                            if (apkLocalFile.exists()) {
-                                                apkLocalFile.delete();
-                                            }
-
-                                            if (apkLocalFileTpm.exists()) {
-                                                apkLocalFileTpm.delete();
-                                            }
-
-                                            try {
-                                                out = new FileOutputStream(apkLocalPathTpm);
-                                                in = new UsbFileInputStream(usbFileItem);
-                                                int bytesRead = 0;
-                                                byte[] buffer = new byte[currentFs.getChunkSize()];
-                                                while ((bytesRead = in.read(buffer)) != -1) {
-                                                    out.write(buffer, 0, bytesRead);
-                                                }
-                                                apkLocalFileTpm.renameTo(apkLocalFile);
-
-                                            } catch (Exception e) {
-
-                                            } finally {
-                                                try {
-                                                    if (out != null) {
-                                                        out.flush();
-                                                        out.close();
-                                                    }
-
-                                                    if (in != null) {
-                                                        in.close();
-                                                    }
-                                                } catch (Exception e) {
-
-                                                }
-                                            }
-
-
-                                            if (apkLocalFile != null && apkLocalFile.exists()) {
-                                                usbFileItem.delete();
-                                                try {
-                                                    device.close();
-                                                } catch (Exception e) {
-
-                                                }
-
-                                                int installVersionCode = getInstallVersionCode(getApplicationContext(), remoteApkPackageName);
-                                                int apkFileVersionCode = getapkFileVersionCode(apkLocalPath, getApplicationContext());
-                                                Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + apkFileVersionCode);
-
-                                                if (apkFileVersionCode > installVersionCode) {
-                                                    installSilent(localUpdateDir + usbUpdateName);
-                                                }
-                                                hasUpdateBin = true;
-                                            }
-                                        } else if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
-                                            InputStream instream = null;
-                                            hasSN = true;
-
-                                            try {
-                                                String content = "";
-                                                instream = new UsbFileInputStream(usbFileItem);
-                                                if (instream != null) {
-                                                    InputStreamReader inputreader = new InputStreamReader(instream, "GBK");
-                                                    BufferedReader buffreader = new BufferedReader(inputreader);
-                                                    String line = "";
-                                                    //分行读取
-                                                    while ((line = buffreader.readLine()) != null) {
-                                                        content += line + "\n";
-                                                    }
-                                                    instream.close();        //关闭输入流
-                                                }
-                                                Log.e(TAG, "initWifiConfigurationFile: content =" + content);
-                                                String[] data = content.split("\n");
-
-                                                if (data != null) {
-                                                    for (String datum : data) {
-                                                        if (datum == null) continue;
-                                                        datum.trim();
-                                                        if (datum.startsWith("SN:")) {
-                                                            try {
-                                                                phoneImei = datum.substring(3);
-                                                                SharedPreferences.Editor editor = getSharedPreferences("Server", MODE_PRIVATE).edit();
-                                                                editor.putString("phoneImei", phoneImei);
-                                                                editor.apply();
-
-                                                            } catch (Exception e) {
-                                                                phoneImei = null;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            } catch (Exception e) {
-                                                Log.e(TAG, "initWifiConfigurationFile Exception =" + e);
-                                            } finally {
-                                                try {
-                                                    if (instream != null) {
-                                                        instream.close();
-                                                    }
-                                                } catch (Exception e) {
-                                                    Log.e(TAG, "saveUSBFileToPhoneDevice:finally IOException =" + e);
-                                                }
-                                            }
-
-                                        }
-
-                                        if (hasUpdateBin && hasSN) {
-                                            return;
-                                        }
-                                    }
-                                }
-                                device.close();
-                            } catch (Exception e) {
-
-                            }
-                        }
-                    }
+                    initImei(usbDevice);
                 }
             }
         };
         initStoreUSBThreadExecutor.execute(runnable);
     }
 
+
+    private void initImei(UsbDevice usbDevice) {
+        if (usbDevice == null) {
+            Log.e(TAG, "initImei: usbDevice==null");
+            return;
+        }
+        Log.e(TAG, "initImei: getProductName = " + usbDevice.getProductName());
+        if (usbDevice.getProductName() == null) {
+            return;
+        }
+        for (int i = 0; i < usbDevice.getInterfaceCount(); i++) {
+            UsbInterface usbInterface = usbDevice.getInterface(i);
+            if (usbInterface == null) {
+                continue;
+            }
+
+            if (usbInterface.getInterfaceClass() == UsbConstants.USB_CLASS_MASS_STORAGE) {
+                try {
+                    UsbMassStorageDevice device = getUsbMass(usbDevice);
+                    device.init();
+                    Log.d(TAG, "run: device.getPartitions().size() =" + device.getPartitions().size());
+                    if (device.getPartitions().size() > 0) {
+                        Partition partition = device.getPartitions().get(0);
+                        FileSystem currentFs = partition.getFileSystem();
+                        UsbFile mRootFolder = currentFs.getRootDirectory();
+                        UsbFile[] usbFileList = mRootFolder.listFiles();
+
+                        boolean hasUpdateBin = false;
+                        boolean hasSN = false;
+
+                        for (UsbFile usbFileItem : usbFileList) {
+                            if (usbFileItem.getName().contains(usbUpdateBin)) {
+                                Log.d(TAG, "run: hasUpdateBin");
+                                FileOutputStream out = null;
+                                InputStream in = null;
+
+                                String apkLocalPath = localUpdateDir + usbUpdateName;
+                                String apkLocalPathTpm = localUpdateDir + usbUpdateName + ".tpm";
+                                File apkLocalFile = new File(apkLocalPath);
+                                File apkLocalFileTpm = new File(apkLocalPathTpm);
+
+                                if (apkLocalFile.exists()) {
+                                    apkLocalFile.delete();
+                                }
+
+                                if (apkLocalFileTpm.exists()) {
+                                    apkLocalFileTpm.delete();
+                                }
+
+                                try {
+                                    out = new FileOutputStream(apkLocalPathTpm);
+                                    in = new UsbFileInputStream(usbFileItem);
+                                    int bytesRead = 0;
+                                    byte[] buffer = new byte[currentFs.getChunkSize()];
+                                    while ((bytesRead = in.read(buffer)) != -1) {
+                                        out.write(buffer, 0, bytesRead);
+                                    }
+                                    apkLocalFileTpm.renameTo(apkLocalFile);
+
+                                } catch (Exception e) {
+                                    Log.e(TAG, "initImei: Exception =" + e);
+
+                                } finally {
+                                    try {
+                                        if (out != null) {
+                                            out.flush();
+                                            out.close();
+                                        }
+
+                                        if (in != null) {
+                                            in.close();
+                                        }
+                                    } catch (Exception e) {
+
+                                    }
+                                }
+
+
+                                if (apkLocalFile != null && apkLocalFile.exists()) {
+                                    usbFileItem.delete();
+                                    try {
+                                        device.close();
+                                    } catch (Exception e) {
+
+                                    }
+
+                                    int installVersionCode = getInstallVersionCode(getApplicationContext(), remoteApkPackageName);
+                                    int apkFileVersionCode = getapkFileVersionCode(apkLocalPath, getApplicationContext());
+                                    Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + apkFileVersionCode);
+
+                                    if (apkFileVersionCode > installVersionCode) {
+                                        installSilent(localUpdateDir + usbUpdateName);
+                                    }
+                                    hasUpdateBin = true;
+                                }
+                            } else if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
+
+                                Log.d(TAG, "run: hasSN");
+                                InputStream instream = null;
+                                hasSN = true;
+
+                                try {
+                                    String content = "";
+                                    instream = new UsbFileInputStream(usbFileItem);
+                                    if (instream != null) {
+                                        InputStreamReader inputreader = new InputStreamReader(instream, "GBK");
+                                        BufferedReader buffreader = new BufferedReader(inputreader);
+                                        String line = "";
+                                        //分行读取
+                                        while ((line = buffreader.readLine()) != null) {
+                                            content += line + "\n";
+                                        }
+                                        instream.close();        //关闭输入流
+                                    }
+                                    Log.e(TAG, "initWifiConfigurationFile: content =" + content);
+                                    String[] data = content.split("\n");
+
+                                    if (data != null) {
+                                        for (String datum : data) {
+                                            if (datum == null) continue;
+                                            datum.trim();
+                                            if (datum.startsWith("SN:")) {
+                                                try {
+                                                    phoneImei = datum.substring(3);
+                                                    SharedPreferences.Editor editor = getSharedPreferences("Server", MODE_PRIVATE).edit();
+                                                    editor.putString("phoneImei", phoneImei);
+                                                    editor.apply();
+
+                                                } catch (Exception e) {
+                                                    phoneImei = null;
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    Log.e(TAG, "initWifiConfigurationFile Exception =" + e);
+                                } finally {
+                                    try {
+                                        if (instream != null) {
+                                            instream.close();
+                                        }
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "saveUSBFileToPhoneDevice:finally IOException =" + e);
+                                    }
+                                }
+
+                            }
+
+                            if (hasUpdateBin && hasSN) {
+                                return;
+                            }
+                        }
+                    }
+                    device.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "initImei: Exception =" + e);
+                }
+            }
+        }
+
+    }
 
     private void netWorkConnect() {
         Log.d(TAG, "netWorkConnect: ");
@@ -689,7 +690,6 @@ public class ObserverServer extends Service {
                     try {
                         Thread.sleep(3000);
                     } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
                     }
                     remote_version = getRemoteVersion();
                 }
@@ -760,8 +760,8 @@ public class ObserverServer extends Service {
     private void getPhoneImei() {
         try {
             TelephonyManager telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-//            phoneImei = telephonyManager.getDeviceId();//TODO hu
-            phoneImei = "202302050000001";
+            phoneImei = telephonyManager.getDeviceId();//TODO hu
+//            phoneImei = "867706050952138";
             Log.d(TAG, "getPhoneImei:  phoneImei =" + phoneImei);
         } catch (Exception | Error e) {
             Log.e(TAG, "getPhoneImei:3333 Exception =" + e);

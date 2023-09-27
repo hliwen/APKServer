@@ -1,10 +1,8 @@
 package com.remoteupload.apkserver;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,9 +10,6 @@ import android.util.Log;
 
 import androidx.core.content.PermissionChecker;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity {
@@ -38,7 +33,7 @@ public class MainActivity extends Activity {
     public static String[] haveNoPermissions(Context mActivity) {
         ArrayList<String> haveNo = new ArrayList<>();
         for (String permission : PERMISSIONS) {
-            if (PermissionChecker.checkPermission(mActivity, permission, Binder.getCallingPid(), Binder.getCallingUid(), mActivity.getPackageName()) != PackageManager.PERMISSION_GRANTED) {
+            if (PermissionChecker.checkPermission(mActivity, permission, Binder.getCallingPid(), Binder.getCallingUid(), mActivity.getPackageName()) != PermissionChecker.PERMISSION_GRANTED) {
                 haveNo.add(permission);
             }
         }
@@ -46,7 +41,12 @@ public class MainActivity extends Activity {
         return haveNo.toArray(new String[haveNo.size()]);
     }
 
-    public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE,
+    public static final String[] PERMISSIONS = {
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+            android.Manifest.permission.READ_PHONE_STATE,
+            android.Manifest.permission.QUERY_ALL_PACKAGES,
+            android.Manifest.permission.PACKAGE_USAGE_STATS,
 
     };
 }
