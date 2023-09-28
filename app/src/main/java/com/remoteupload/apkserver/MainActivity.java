@@ -1,5 +1,6 @@
 package com.remoteupload.apkserver;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -47,6 +48,7 @@ public class MainActivity extends Activity {
             android.Manifest.permission.READ_PHONE_STATE,
             android.Manifest.permission.QUERY_ALL_PACKAGES,
             android.Manifest.permission.PACKAGE_USAGE_STATS,
+            Manifest.permission.GET_TASKS,
 
     };
 }
