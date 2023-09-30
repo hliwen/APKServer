@@ -66,7 +66,9 @@ public class Utils {
     public static String getPhoneImei(Context context) {
         try {
             TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-            return telephonyManager.getDeviceId();
+            return telephonyManager.getDeviceId();//TODO hu
+
+//            return "202302050000001";//TODO hu
         } catch (Exception | Error e) {
         }
         return null;

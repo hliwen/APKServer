@@ -15,4 +15,8 @@ public class ProfileModel {
         SN = null;
     }
 
+    @Override
+    public String toString() {
+        return "imei ="+imei+",wifi="+wifi+",pass="+pass+",SN ="+SN;
+    }
 }
