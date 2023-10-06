@@ -827,7 +827,6 @@ public class MainActivity extends Activity {
         if (profileModel.pass != null) editor.putString("pass", profileModel.pass);
         if (profileModel.SN != null) editor.putString("SN", profileModel.SN);
 
-        editor.apply();
     }
 
     private ProfileModel getProfileModel() {
