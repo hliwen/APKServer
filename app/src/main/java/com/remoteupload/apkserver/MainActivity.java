@@ -65,8 +65,14 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "apkServerlog";
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
-    private static final String remoteApkPackageName = "com.example.nextclouddemo";
+    private static final String uploadApkPackageName = "com.example.nextclouddemo";
     private static final String serVerApkPackageName = "com.remoteupload.apkserver";
+    static String logcatDirName = "MLogcat";
+    static String remoteDirName = "测试日志";
+    static String remoteApkName = "app-release.apk";
+    static String remoteURL = "https://pandev.iothm.top:7010";
+    static String remoteUserName = "404085991@qq.com";
+    static String remoteUserPass = "404085991@qq.com1234YGBH";
     static String appName = "remoteUpload.apk";
     static String usbUpdateName = "update.apk";
     static String usbUpdateBin = "update.bin";
@@ -74,25 +80,22 @@ public class MainActivity extends Activity {
     static String localUpdateDir = "/storage/emulated/0/Download/";
     public static final String appVersionURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/latest";
     public static final String appDowloadURL = "https://www.iothm.top:12443/v2/app/autoUpdate/V3/version/";
-
     private static final String checkDevieNum = "checkDevieNum";
     private static final String checkUploadAPKState = "checkUploadAPKState";
     private static final String reInstallAPK = "reInstallAPK";
     private static final String shellcommand = "shellcommand:";
     private static final String uploadLogcat = "uploadLogcat";
-    private NetworkBroadcast networkBroadcast;
-    private DeviceBroadcast deviceBroadcast;
+
+    private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
     private int requestPermissionCount;
-
-
     private boolean netWorkonAvailableBroadcast;
     private String runCommand;
     private boolean installingAPK;
     private String phoneImei;
     private int deviceId = -1;
     private boolean deviceInit;
-
+    public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
 
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -105,8 +108,7 @@ public class MainActivity extends Activity {
         }
 
         EventBus.getDefault().register(this);
-        registerNetworkBroadcast();
-        registerStoreUSBReceiver();
+        registerMyReceiver();
         initStoreUSBDevice();
     }
 
@@ -121,25 +123,22 @@ public class MainActivity extends Activity {
         return haveNo.toArray(new String[haveNo.size()]);
     }
 
-    public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS,
-
-    };
-
     @Override
     protected void onDestroy() {
         super.onDestroy();
         EventBus.getDefault().unregister(this);
-        unregisterReceiver(networkBroadcast);
-        unregisterReceiver(deviceBroadcast);
+
+        unregisterReceiver(myBroadcast);
     }
 
     @SuppressLint("SetTextI18n")
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void receiveMqttMessage(String message) {
         if (message == null) return;
-
         message = message.trim();
-
+        if (message.contains("mqttConnected")) {
+            return;
+        }
         Log.e(TAG, "receiveMqttMessage: message =" + message);
         if (message.contains(shellcommand)) {
             runShellCommander(message);
@@ -218,14 +217,13 @@ public class MainActivity extends Activity {
     }
 
     private void checkUploadAPKState() {
-        boolean uploadApkIsInstall = Utils.isAppInstalled(getApplicationContext(), remoteApkPackageName);
-        int uploadApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), remoteApkPackageName);
+        boolean uploadApkIsInstall = Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName);
         int serverApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), serVerApkPackageName);
 
         boolean isAppRunning = false;
-        int uid = Utils.getPackageUid(getApplicationContext(), remoteApkPackageName);
+        int uid = Utils.getPackageUid(getApplicationContext(), uploadApkPackageName);
         if (uid > 0) {
-            boolean rstA = Utils.isAppRunning(getApplicationContext(), remoteApkPackageName);
+            boolean rstA = Utils.isAppRunning(getApplicationContext(), uploadApkPackageName);
             boolean rstB = Utils.isProcessRunning(getApplicationContext(), uid);
             if (rstA || rstB) {
                 isAppRunning = true;
@@ -234,6 +232,7 @@ public class MainActivity extends Activity {
 
         String message = "apk是否已安装：" + uploadApkIsInstall;
         if (uploadApkIsInstall) {
+            int uploadApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), uploadApkPackageName);
             message = message + ";版本：" + uploadApkVersionCode;
         }
         message = message + ";是否正常运行：" + isAppRunning;
@@ -243,10 +242,12 @@ public class MainActivity extends Activity {
     }
 
     private void uploadLogcat() {
-        String logcatDir = Environment.getExternalStorageDirectory() + File.separator + "MLogcat";
+        String logcatDir = Environment.getExternalStorageDirectory() + File.separator + logcatDirName;
         File file = new File(logcatDir);
         if (!file.exists()) {
             file.mkdirs();
+            publishMessage("文件夹没有日志生成");
+            return;
         }
 
         try {
@@ -258,23 +259,24 @@ public class MainActivity extends Activity {
 
         }
 
-        OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse("https://pandev.iothm.top:7010"), MainActivity.this, true);
-
-        if (ownCloudClient == null) {
-            publishMessage("连接服务器失败");
-            return;
-        }
-
-        ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials("404085991@qq.com", "404085991@qq.com1234YGBH"));
-
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
+
+                    OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse(remoteURL), MainActivity.this, true);
+
+                    if (ownCloudClient == null) {
+                        publishMessage("连接服务器失败");
+                        return;
+                    }
+
+                    ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials(remoteUserName, remoteUserPass));
+
                     for (File listFile : file.listFiles()) {
                         Long timeStampLong = listFile.lastModified() / 1000;
                         String timeStamp = timeStampLong.toString();
-                        UploadFileRemoteOperation uploadOperation = new UploadFileRemoteOperation(listFile.getAbsolutePath(), "测试日志/" + listFile.getName(), "text/plain", timeStamp);
+                        UploadFileRemoteOperation uploadOperation = new UploadFileRemoteOperation(listFile.getAbsolutePath(), remoteDirName + File.separator + listFile.getName(), "text/plain", timeStamp);
                         RemoteOperationResult result = uploadOperation.execute(ownCloudClient);
                         if (result.isSuccess()) {
                             publishMessage(listFile.getName() + "________日志上传成功 ：" + file.listFiles().length);
@@ -301,13 +303,13 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    String apkPath = Environment.getExternalStorageDirectory() + File.separator + "测试日志/app-release.apk";
+                    String apkPath = Environment.getExternalStorageDirectory() + File.separator + remoteDirName + File.separator + remoteApkName;
                     File apkFile = new File(apkPath);
                     if (apkFile != null && apkFile.exists()) {
                         apkFile.delete();
                     }
 
-                    OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse("https://pandev.iothm.top:7010"), MainActivity.this, true);
+                    OwnCloudClient ownCloudClient = OwnCloudClientFactory.createOwnCloudClient(Uri.parse(remoteURL), MainActivity.this, true);
                     if (ownCloudClient == null) {
                         publishMessage("连接服务器失败");
                         installingAPK = false;
@@ -315,18 +317,23 @@ public class MainActivity extends Activity {
                     }
 
                     publishMessage("开始下载");
-                    ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials("404085991@qq.com", "404085991@qq.com1234YGBH"));
-                    DownloadFileRemoteOperation downloadFileRemoteOperation = new DownloadFileRemoteOperation("测试日志/app-release.apk", Environment.getExternalStorageDirectory() + File.separator);
+                    ownCloudClient.setCredentials(OwnCloudCredentialsFactory.newBasicCredentials(remoteUserName, remoteUserPass));
+                    DownloadFileRemoteOperation downloadFileRemoteOperation = new DownloadFileRemoteOperation(remoteDirName + File.separator + remoteApkName, Environment.getExternalStorageDirectory() + File.separator);
                     RemoteOperationResult result = downloadFileRemoteOperation.execute(ownCloudClient);
-                    Log.e(TAG, "reInstallAPK: result =" + result);
+                    Log.e(TAG, "reInstallAPK: 下载 result =" + result);
                     if (result.isSuccess()) {
-                        publishMessage("开始安装apk");
+
+
+                        int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkPath);
+
+                        publishMessage("开始安装apk 版本：" + apkFileVersionCode);
+
                         boolean installResult = Utils.installSilent(apkPath);
                         if (installResult) {
                             publishMessage("安装成功");
                             startRemoteActivity();
                         } else {
-                            publishMessage("安失败");
+                            publishMessage("安装失败");
                         }
                     } else {
                         publishMessage("下载失败:" + result);
@@ -340,94 +347,16 @@ public class MainActivity extends Activity {
     }
 
 
-    private void registerNetworkBroadcast() {
-        networkBroadcast = new NetworkBroadcast();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
-        filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
-
-        registerReceiver(networkBroadcast, filter);
-    }
-
-    class NetworkBroadcast extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Log.e(TAG, "onReceive:getAction = " + intent.getAction());
-            if (intent.getAction() == null) return;
-            if (intent.getAction().equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
-                NetworkInfo info = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info.getState().equals(NetworkInfo.State.DISCONNECTED)) {
-                    Log.d(TAG, "NetWorkReceiver: 网络断开广播");
-                    handler.removeMessages(msg_network_connect);
-                    handler.removeMessages(msg_network_dissconnect);
-                } else if (info.getState().equals(NetworkInfo.State.CONNECTED)) {
-                    Log.d(TAG, "NetWorkReceiver: 网络连接广播");
-                    handler.removeMessages(msg_network_connect);
-                    handler.sendEmptyMessageDelayed(msg_network_connect, 2000);
-                }
-            }
-        }
-    }
-
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    private void registerStoreUSBReceiver() {
-        deviceBroadcast = new DeviceBroadcast();
+    private void registerMyReceiver() {
+        myBroadcast = new MyBroadcast();
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         intentFilter.addAction(GET_DEVICE_PERMISSION);
-        registerReceiver(deviceBroadcast, intentFilter);
-    }
-
-    class DeviceBroadcast extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (action == null) return;
-            switch (action) {
-                case UsbManager.ACTION_USB_DEVICE_ATTACHED: {
-                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (usbDevice == null) {
-                        Log.e(TAG, "deviceBroadcast onReceive: action =" + action + ",usbDevice == null");
-                        return;
-                    }
-                    Log.e(TAG, "deviceBroadcast onReceive: action =" + action + ", getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
-                        usbConnect(usbDevice);
-                    }
-                }
-                break;
-                case GET_DEVICE_PERMISSION: {
-                    handler.removeMessages(msg_get_permission_timeout);
-                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (usbDevice == null) {
-                        Log.e(TAG, "deviceBroadcast onReceive: action =" + action + ",usbDevice == null");
-                        return;
-                    }
-                    Log.e(TAG, "deviceBroadcast onReceive: action =" + action + ", getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
-                        usbConnect(usbDevice);
-                    }
-                }
-                break;
-                case UsbManager.ACTION_USB_DEVICE_DETACHED:
-                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (usbDevice == null) {
-                        Log.e(TAG, "ReceiverStoreUSB onReceive: action =" + action + ",usbDevice == null");
-                        return;
-                    }
-                    Log.e(TAG, "ReceiverStoreUSB onReceive: action =" + action + ", getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName()) && deviceId == usbDevice.getDeviceId()) {
-                        requestPermissionCount = 0;
-                        deviceId = -1;
-                        deviceInit = false;
-                        stopStoreUSBInitThreadExecutor();
-                    }
-                    break;
-                default:
-                    break;
-            }
-        }
+        intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+        intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+        registerReceiver(myBroadcast, intentFilter);
     }
 
     public void initStoreUSBDevice() {
@@ -455,6 +384,74 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    class MyBroadcast extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action == null) return;
+            switch (action) {
+                case UsbManager.ACTION_USB_DEVICE_DETACHED: {
+                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                    if (usbDevice == null) {
+                        Log.e(TAG, "ACTION_USB_DEVICE_DETACHED usbDevice == null");
+                        return;
+                    }
+                    Log.e(TAG, "ACTION_USB_DEVICE_DETACHED getProductName =" + usbDevice.getProductName());
+                    if (Utils.isStroreUSBDevice(usbDevice.getProductName()) && deviceId == usbDevice.getDeviceId()) {
+                        requestPermissionCount = 0;
+                        deviceId = -1;
+                        deviceInit = false;
+                        stopStoreUSBInitThreadExecutor();
+                    }
+                }
+                break;
+                case UsbManager.ACTION_USB_DEVICE_ATTACHED: {
+                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                    if (usbDevice == null) {
+                        Log.e(TAG, "ACTION_USB_DEVICE_ATTACHED usbDevice == null");
+                        return;
+                    }
+                    Log.e(TAG, "ACTION_USB_DEVICE_ATTACHED getProductName =" + usbDevice.getProductName());
+                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
+                        usbConnect(usbDevice);
+                    }
+                }
+                break;
+                case GET_DEVICE_PERMISSION: {
+                    handler.removeMessages(msg_get_permission_timeout);
+                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                    if (usbDevice == null) {
+                        Log.e(TAG, "GET_DEVICE_PERMISSION usbDevice == null");
+                        return;
+                    }
+                    Log.e(TAG, "GET_DEVICE_PERMISSION getProductName =" + usbDevice.getProductName());
+                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
+                        usbConnect(usbDevice);
+                    }
+                }
+                break;
+
+                case ConnectivityManager.CONNECTIVITY_ACTION: {
+                    NetworkInfo info = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
+                    if (info.getState().equals(NetworkInfo.State.DISCONNECTED)) {
+                        Log.d(TAG, "网络断开广播");
+                        handler.removeMessages(msg_network_connect);
+                        netWorkonAvailableBroadcast = false;
+                    } else if (info.getState().equals(NetworkInfo.State.CONNECTED)) {
+                        Log.d(TAG, "网络连接广播");
+                        handler.removeMessages(msg_network_connect);
+                        handler.sendEmptyMessageDelayed(msg_network_connect, 2000);
+                    }
+                }
+                break;
+                default:
+                    break;
+            }
+        }
+    }
+
+
     private synchronized void usbConnect(UsbDevice usbDevice) {
         Log.d(TAG, "usbConnect: start ...................... ");
         if (usbDevice == null) {
@@ -463,18 +460,14 @@ public class MainActivity extends Activity {
         Log.d(TAG, "usbConnect 存储U盘设备接入:" + usbDevice.getProductName());
         stopStoreUSBInitThreadExecutor();
         initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
-
-
-        Log.d(TAG, "usbConnect: run11  start");
-
         initStoreUSBThreadExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                Log.d(TAG, "usbConnect: run22  start");
                 UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
                 if (!usbManager.hasPermission(usbDevice)) {
                     requestPermissionCount++;
                     if (requestPermissionCount > 20) {
+                        Log.d(TAG, "usbConnect: 0000");
                         return;
                     }
                     handler.removeMessages(msg_get_permission_timeout);
@@ -485,27 +478,25 @@ public class MainActivity extends Activity {
                     return;
                 }
                 requestPermissionCount = 0;
-                Log.d(TAG, "run: 33333");
-
                 int interfaceCount = usbDevice.getInterfaceCount();
-                Log.d(TAG, "run: 444 interfaceCount =" + interfaceCount);
+                Log.d(TAG, "usbConnect interfaceCount =" + interfaceCount);
                 for (int i = 0; i < interfaceCount; i++) {
                     UsbInterface usbInterface = usbDevice.getInterface(i);
                     if (usbInterface == null) {
-                        Log.d(TAG, "run: 555555");
+                        Log.d(TAG, "usbConnect: 1111");
                         continue;
                     }
-                    Log.e(TAG, "run: 5555566666 getInterfaceClass =" + usbInterface.getInterfaceClass());
+                    Log.e(TAG, "usbConnect getInterfaceClass =" + usbInterface.getInterfaceClass());
                     if (usbInterface.getInterfaceClass() == UsbConstants.USB_CLASS_MASS_STORAGE) {
                         UsbMassStorageDevice device = Utils.getUsbMass(usbDevice, getApplicationContext());
                         if (device == null) {
-                            Log.d(TAG, "run: 6666666");
+                            Log.d(TAG, "usbConnect 22222");
                             continue;
                         }
                         try {
-                            Log.d(TAG, "run: aaaaaaaa");
+                            Log.d(TAG, "usbConnect: init start.................");
                             device.init();
-                            Log.d(TAG, "run: bbbbbbbb");
+                            Log.d(TAG, "usbConnect: init end.................");
                         } catch (Exception e) {
                             Log.e(TAG, "usbConnect : device.init 设备初始化错误 " + e);
                             continue;
@@ -532,12 +523,12 @@ public class MainActivity extends Activity {
                             deviceInit = true;
                             Log.e(TAG, "run: deviceId =" + deviceId);
                         } catch (Exception e) {
-                            Log.e(TAG, "usbConnect 111 Exception =" + e);
+                            Log.e(TAG, "usbConnect for file list Exception =" + e);
                         }
                         try {
                             device.close();
                         } catch (Exception e) {
-                            Log.e(TAG, "run: 777 Exception =" + e);
+                            Log.e(TAG, "run: device.close Exception =" + e);
                         }
                     }
                 }
@@ -545,9 +536,8 @@ public class MainActivity extends Activity {
         });
     }
 
-
     private void parseWifiConfiguration(UsbFile usbFileItem) {
-        Log.d(TAG, "parseWifiConfiguration run: 找到配置文件 start");
+        Log.d(TAG, "parseWifiConfiguration start .............");
         InputStream instream = null;
         try {
             String content = "";
@@ -556,7 +546,6 @@ public class MainActivity extends Activity {
                 InputStreamReader inputreader = new InputStreamReader(instream, "GBK");
                 BufferedReader buffreader = new BufferedReader(inputreader);
                 String line = "";
-                //分行读取
                 while ((line = buffreader.readLine()) != null) {
                     content += line + "\n";
                 }
@@ -577,19 +566,16 @@ public class MainActivity extends Activity {
                         try {
                             wifiName = datum.substring(5);
                         } catch (Exception e) {
-
                         }
                     } else if (datum.startsWith("pass:")) {
                         try {
                             pass = datum.substring(5);
                         } catch (Exception e) {
-
                         }
                     } else if (datum.startsWith("SN:")) {
                         try {
                             SN = datum.substring(3);
                         } catch (Exception e) {
-
                         }
                     }
                 }
@@ -610,14 +596,10 @@ public class MainActivity extends Activity {
                             if (wifiInfo != null && wifiInfo.getSSID() != null && wifiInfo.getSSID().contains(profileModel.wifi)) {
                                 return;
                             }
-                            if (profileModel.pass == null) {
+                            if (profileModel.pass == null || profileModel.pass.length() == 0) {
                                 Utils.connectWifiNoPws(profileModel.wifi, wifiManager);
                             } else {
-                                if (profileModel.pass.length() == 0) {
-                                    Utils.connectWifiNoPws(profileModel.wifi, wifiManager);
-                                } else {
-                                    Utils.connectWifiPws(profileModel.wifi, profileModel.pass, wifiManager);
-                                }
+                                Utils.connectWifiPws(profileModel.wifi, profileModel.pass, wifiManager);
                             }
                         } else {
                             wifiManager.setWifiEnabled(true);
@@ -626,20 +608,21 @@ public class MainActivity extends Activity {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "initWifiConfigurationFile Exception =" + e);
+            Log.e(TAG, "parseWifiConfiguration Exception =" + e);
         } finally {
             try {
                 if (instream != null) {
                     instream.close();
                 }
             } catch (Exception e) {
-                Log.e(TAG, "saveUSBFileToPhoneDevice:finally IOException =" + e);
+                Log.e(TAG, "parseWifiConfiguration:finally IOException =" + e);
             }
         }
+        Log.d(TAG, "parseWifiConfiguration end .............");
     }
 
     private void parseBinAPK(UsbFile usbFileItem, FileSystem fileSystem) {
-        Log.d(TAG, "parseBinAPK: ");
+        Log.d(TAG, "parseBinAPK: start ..............");
         String apkLocalPath = localUpdateDir + usbUpdateName;
         File apkLocalFile = new File(apkLocalPath);
         if (apkLocalFile.exists()) {
@@ -657,7 +640,7 @@ public class MainActivity extends Activity {
                 out.write(buffer, 0, bytesRead);
             }
         } catch (Exception e) {
-            Log.e(TAG, "initImei: Exception =" + e);
+            Log.e(TAG, "parseBinAPK: 11 Exception =" + e);
         } finally {
             try {
                 if (out != null) {
@@ -668,26 +651,28 @@ public class MainActivity extends Activity {
                     in.close();
                 }
             } catch (Exception e) {
-
+                Log.e(TAG, "parseBinAPK: 22 Exception =" + e);
             }
         }
+        apkLocalFile = new File(apkLocalPath);
+
         if (apkLocalFile != null && apkLocalFile.exists()) {
-            int installVersionCode = Utils.getInstallVersionCode(getApplicationContext(), remoteApkPackageName);
+            int installVersionCode = Utils.getInstallVersionCode(getApplicationContext(), uploadApkPackageName);
             int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkLocalPath);
-            Log.e(TAG, "onCreate: installVersionCode =" + installVersionCode + ",localVersionCode =" + apkFileVersionCode);
+            Log.e(TAG, "parseBinAPK: installVersionCode =" + installVersionCode + ",localVersionCode =" + apkFileVersionCode);
             if (apkFileVersionCode > installVersionCode) {
                 publishMessage("开始安装apk");
                 boolean installResult = Utils.installSilent(localUpdateDir + usbUpdateName);
                 if (installResult) {
                     try {
                         usbFileItem.delete();
-                    } catch (IOException e) {
+                    } catch (Exception e) {
 
                     }
                     publishMessage("安装成功");
                     startRemoteActivity();
                 } else {
-                    publishMessage("安失败");
+                    publishMessage("安装失败");
                 }
             }
         }
@@ -707,12 +692,6 @@ public class MainActivity extends Activity {
         Log.d(TAG, "stopStoreUSBInitThreadExecutor: end");
     }
 
-
-    private void netWorkDissConnect() {
-        Log.d(TAG, "netWorkDissConnect: ");
-        netWorkonAvailableBroadcast = false;
-    }
-
     private void netWorkConnect() {
         Log.d(TAG, "netWorkConnect: ");
         netWorkonAvailableBroadcast = true;
@@ -729,7 +708,7 @@ public class MainActivity extends Activity {
                 }
                 Log.d(TAG, "netWorkConnect: remote_version =" + remote_version);
 
-                if (!Utils.isAppInstalled(getApplicationContext(), remoteApkPackageName)) {
+                if (!Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName)) {
                     downloadRemoteAPK(remote_version);
                 }
 
@@ -747,7 +726,7 @@ public class MainActivity extends Activity {
                 String imei = null;
                 if (cellular) {
                     imei = Utils.getPhoneImei(getApplicationContext());
-                    Log.d(TAG, "run: imei= " + imei);
+                    Log.d(TAG, "getPhoneImei: imei= " + imei);
                     int checkCount = 0;
                     while (imei == null && checkCount < 20 && netWorkonAvailableBroadcast) {
                         checkCount++;
@@ -757,11 +736,12 @@ public class MainActivity extends Activity {
 
                         }
                         imei = Utils.getPhoneImei(getApplicationContext());
-                        Log.d(TAG, "run:4444 imei= " + imei);
+                        Log.d(TAG, "while getPhoneImei imei= " + imei);
                     }
                     if (imei == null) {
                         ProfileModel profileModel = getProfileModel();
                         if (profileModel == null) {
+                            Log.d(TAG, "run: 111111111111");
                             return;
                         }
                         imei = profileModel.imei;
@@ -769,17 +749,20 @@ public class MainActivity extends Activity {
                             imei = profileModel.SN;
                         }
                     }
-                    if (imei != null) {
-                        ProfileModel profileModel = new ProfileModel();
-                        profileModel.imei = imei;
-                        saveProfileModel(profileModel);
+
+                    if (imei == null) {
+                        Log.d(TAG, "run: 22222222222");
+                        return;
                     }
-                    Log.d(TAG, "run111: imei= " + imei);
+
+                    ProfileModel profileModel = new ProfileModel();
+                    profileModel.imei = imei;
+                    saveProfileModel(profileModel);
                 } else {
+
+
                     ProfileModel profileModel = getProfileModel();
-                    if (profileModel == null) {
-                        imei = null;
-                    } else {
+                    if (profileModel != null) {
                         imei = profileModel.SN;
                         if (imei == null) {
                             imei = profileModel.imei;
@@ -815,22 +798,28 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-
     private void saveProfileModel(ProfileModel profileModel) {
         Log.d(TAG, "saveProfileModel: profileModel =" + profileModel);
         if (profileModel == null) {
             return;
         }
         SharedPreferences.Editor editor = getSharedPreferences("Server", MODE_PRIVATE).edit();
-        if (profileModel.imei != null) editor.putString("imei", profileModel.imei);
-        if (profileModel.wifi != null) editor.putString("wifi", profileModel.wifi);
-        if (profileModel.pass != null) editor.putString("pass", profileModel.pass);
-        if (profileModel.SN != null) editor.putString("SN", profileModel.SN);
-
+        if (profileModel.imei != null) {
+            editor.putString("imei", profileModel.imei);
+        }
+        if (profileModel.wifi != null) {
+            editor.putString("wifi", profileModel.wifi);
+        }
+        if (profileModel.pass != null) {
+            editor.putString("pass", profileModel.pass);
+        }
+        if (profileModel.SN != null) {
+            editor.putString("SN", profileModel.SN);
+        }
+        editor.apply();
     }
 
     private ProfileModel getProfileModel() {
-
         SharedPreferences sharedPreferences = getSharedPreferences("Server", MODE_PRIVATE);
         ProfileModel profileModel = new ProfileModel();
         profileModel.imei = sharedPreferences.getString("imei", null);
@@ -850,13 +839,12 @@ public class MainActivity extends Activity {
         return profileModel;
     }
 
-
     private void publishMessage(String message) {
         Log.d(TAG, "publishMessage: message =" + message);
         if (MqttManager.isConnected()) {
             MqttManager.getInstance().publish("/camera/v2/device/" + phoneImei + "AAA/android/receive", 1, message);
         } else {
-            if (netWorkonAvailableBroadcast) {
+            if (netWorkonAvailableBroadcast && phoneImei != null) {
                 Message message1 = new Message();
                 message1.what = msg_resend_mqtt;
                 message1.obj = message;
@@ -866,9 +854,12 @@ public class MainActivity extends Activity {
         }
     }
 
-
     private void downloadRemoteAPK(int remote_version) {
-        Log.d(TAG, "downloadRemoteAPK: ");
+        Log.d(TAG, "downloadRemoteAPK: remote_version =" + remote_version);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return;
+        }
         try {
             String apkPath = localUpdateDir + remote_version + "_" + appName;
             File apkFile = new File(apkPath);
@@ -897,7 +888,7 @@ public class MainActivity extends Activity {
                     publishMessage("安装成功");
                     startRemoteActivity();
                 } else {
-                    publishMessage("安失败");
+                    publishMessage("安装失败");
                 }
             } else {
                 publishMessage("下载apk失败");
@@ -931,10 +922,9 @@ public class MainActivity extends Activity {
     }
 
 
-    private static final int msg_network_connect = 6;
-    private static final int msg_network_dissconnect = 7;
-    private static final int msg_resend_mqtt = 8;
-    private static final int msg_get_permission_timeout = 9;
+    private static final int msg_network_connect = 1;
+    private static final int msg_resend_mqtt = 2;
+    private static final int msg_get_permission_timeout = 3;
 
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
@@ -943,9 +933,6 @@ public class MainActivity extends Activity {
             switch (msg.what) {
                 case msg_network_connect:
                     netWorkConnect();
-                    break;
-                case msg_network_dissconnect:
-                    netWorkDissConnect();
                     break;
                 case msg_resend_mqtt:
                     if (msg.obj != null) {
@@ -958,6 +945,4 @@ public class MainActivity extends Activity {
             }
         }
     };
-
-
 }
