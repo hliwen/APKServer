@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "remotelog_Serverlog";
     private static final String BroadcastIntent = "Initing_USB";
+    private static final String sendBroadcastToServer = "sendBroadcastToServer";
     private static final String startUploadApk = "startUploadApk";
     private static final String BroadcastInitingUSB = "BroadcastInitingUSB";
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
@@ -112,7 +113,7 @@ public class MainActivity extends Activity {
         if (value.length > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(value, 111);
         }
-        sendBroadcastForUploadApk(false,1);
+        sendBroadcastForUploadApk(false, 1);
         EventBus.getDefault().register(this);
         registerMyReceiver();
         initStoreUSBDevice();
@@ -441,6 +442,7 @@ public class MainActivity extends Activity {
         intentFilter.addAction(GET_DEVICE_PERMISSION);
         intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+        intentFilter.addAction(sendBroadcastToServer);
         registerReceiver(myBroadcast, intentFilter);
     }
 
@@ -529,6 +531,9 @@ public class MainActivity extends Activity {
                     }
                 }
                 break;
+                case sendBroadcastToServer:
+                    publishMessage(intent.getStringExtra("fucntion"));
+                    break;
                 default:
                     break;
             }
@@ -541,7 +546,7 @@ public class MainActivity extends Activity {
         if (usbDevice == null) {
             return;
         }
-        sendBroadcastForUploadApk(true,2);
+        sendBroadcastForUploadApk(true, 2);
         Log.d(TAG, "usbConnect 存储U盘设备接入:" + usbDevice.getProductName());
         stopStoreUSBInitThreadExecutor();
         initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
@@ -552,7 +557,7 @@ public class MainActivity extends Activity {
                 if (!usbManager.hasPermission(usbDevice)) {
                     requestPermissionCount++;
                     if (requestPermissionCount > 20) {
-                        sendBroadcastForUploadApk(false,3);
+                        sendBroadcastForUploadApk(false, 3);
                         Log.d(TAG, "usbConnect: 0000");
                         return;
                     }
@@ -600,10 +605,10 @@ public class MainActivity extends Activity {
                             UsbFile[] usbFileList = usbRootFolder.listFiles();
                             for (UsbFile usbFileItem : usbFileList) {
                                 if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
-                                    sendBroadcastForUploadApk(true,4);
+                                    sendBroadcastForUploadApk(true, 4);
                                     parseWifiConfiguration(usbFileItem);
                                 } else if (usbFileItem.getName().contains(usbUpdateBin)) {
-                                    sendBroadcastForUploadApk(true,5);
+                                    sendBroadcastForUploadApk(true, 5);
                                     parseBinAPK(usbFileItem, fileSystem);
                                 }
                             }
@@ -617,17 +622,17 @@ public class MainActivity extends Activity {
                         } catch (Exception e) {
                             Log.e(TAG, "run: device.close Exception =" + e);
                         }
-                        sendBroadcastForUploadApk(false,6);
+                        sendBroadcastForUploadApk(false, 6);
                     }
                 }
 
-                sendBroadcastForUploadApk(false,7);
+                sendBroadcastForUploadApk(false, 7);
             }
         });
     }
 
 
-    private void sendBroadcastForUploadApk(boolean initing,int position) {
+    private void sendBroadcastForUploadApk(boolean initing, int position) {
         try {
             Intent intent = new Intent(BroadcastIntent);
             intent.putExtra(BroadcastInitingUSB, initing);
@@ -943,6 +948,9 @@ public class MainActivity extends Activity {
 
     private void publishMessage(String message) {
         Log.d(TAG, "publishMessage: message =" + message);
+
+        if (message == null) return;
+
         if (MqttManager.isConnected()) {
             MqttManager.getInstance().publish("/camera/v2/device/" + phoneImei + "AAA/android/receive", 1, message);
         } else {
