@@ -65,13 +65,14 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "apkServerlog";
     private static final String BroadcastIntent = "Initing_USB";
-    private static final String resetBackupData = "resetBackupData";
     private static final String startUploadApk = "startUploadApk";
     private static final String BroadcastInitingUSB = "BroadcastInitingUSB";
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
     private static final String uploadApkPackageName = "com.example.nextclouddemo";
     private static final String serVerApkPackageName = "com.remoteupload.apkserver";
     static String logcatDirName = "MLogcat";
+    static String CameraPath = "CameraPath";
+    static String CameraUploadPath = "CameraUploadPath";
     static String remoteDirName = "测试日志";
     static String remoteApkName = "app-release.apk";
     static String remoteURL = "https://pandev.iothm.top:7010";
@@ -89,6 +90,7 @@ public class MainActivity extends Activity {
     private static final String reInstallAPK = "reInstallAPK";
     private static final String shellcommand = "shellcommand:";
     private static final String uploadLogcat = "uploadLogcat";
+    private static final String resetData = "resetData";
 
     private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
@@ -159,11 +161,11 @@ public class MainActivity extends Activity {
             case uploadLogcat:
                 uploadLogcat();
                 break;
+            case resetData:
+                resetData();
+                break;
             case reInstallAPK:
                 reInstallAPK();
-                break;
-            case resetBackupData:
-                sendBroadcast(new Intent(resetBackupData));
                 break;
             case startUploadApk:
                 sendBroadcast(new Intent(startUploadApk));
@@ -303,6 +305,68 @@ public class MainActivity extends Activity {
                 }
             }
         }).start();
+
+    }
+
+
+    private void resetData() {
+        {
+            String dir = Environment.getExternalStorageDirectory() + File.separator + logcatDirName;
+            File file = new File(dir);
+            if (file.exists()) {
+                try {
+                    for (File listFile : file.listFiles()) {
+                        listFile.delete();
+                    }
+                } catch (Exception e) {
+
+                }
+            }
+        }
+
+        {
+            String dir = Environment.getExternalStorageDirectory() + File.separator + CameraPath;
+            File file = new File(dir);
+            if (file.exists()) {
+                try {
+                    for (File listFile : file.listFiles()) {
+                        listFile.delete();
+                    }
+                } catch (Exception e) {
+
+                }
+            }
+        }
+        {
+            String dir = Environment.getExternalStorageDirectory() + File.separator + CameraUploadPath;
+            File file = new File(dir);
+            if (file.exists()) {
+                try {
+                    for (File listFile : file.listFiles()) {
+                        listFile.delete();
+                    }
+                } catch (Exception e) {
+
+                }
+            }
+        }
+
+        {
+            String filePath = Environment.getExternalStorageDirectory() + File.separator + "remotePictureList.txt";
+            File file = new File(filePath);
+            if (file.exists()) {
+                file.delete();
+            }
+        }
+
+        {
+            String filePath = Environment.getExternalStorageDirectory() + File.separator + "usbPictureList.txt";
+            File file = new File(filePath);
+            if (file.exists()) {
+                file.delete();
+            }
+        }
+
 
     }
 
