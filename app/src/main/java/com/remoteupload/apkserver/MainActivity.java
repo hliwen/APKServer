@@ -64,6 +64,10 @@ import me.jahnen.libaums.core.partition.Partition;
 public class MainActivity extends Activity {
 
     private static final String TAG = "apkServerlog";
+    private static final String BroadcastIntent = "Initing_USB";
+    private static final String resetBackupData = "resetBackupData";
+    private static final String startUploadApk = "startUploadApk";
+    private static final String BroadcastInitingUSB = "BroadcastInitingUSB";
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
     private static final String uploadApkPackageName = "com.example.nextclouddemo";
     private static final String serVerApkPackageName = "com.remoteupload.apkserver";
@@ -94,7 +98,7 @@ public class MainActivity extends Activity {
     private boolean installingAPK;
     private String phoneImei;
     private int deviceId = -1;
-    private boolean deviceInit;
+
     public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
 
     public void onCreate(Bundle savedInstanceState) {
@@ -106,10 +110,11 @@ public class MainActivity extends Activity {
         if (value.length > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(value, 111);
         }
-
+        sendBroadcastForUploadApk(false);
         EventBus.getDefault().register(this);
         registerMyReceiver();
         initStoreUSBDevice();
+        sendBroadcast(new Intent(startUploadApk));
     }
 
     public static String[] haveNoPermissions(Context mActivity) {
@@ -156,6 +161,12 @@ public class MainActivity extends Activity {
                 break;
             case reInstallAPK:
                 reInstallAPK();
+                break;
+            case resetBackupData:
+                sendBroadcast(new Intent(resetBackupData));
+                break;
+            case startUploadApk:
+                sendBroadcast(new Intent(startUploadApk));
                 break;
         }
     }
@@ -219,6 +230,7 @@ public class MainActivity extends Activity {
     private void checkUploadAPKState() {
         boolean uploadApkIsInstall = Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName);
         int serverApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), serVerApkPackageName);
+        String serverApkVersionName = Utils.getInstallVersionName(getApplicationContext(), serVerApkPackageName);
 
         boolean isAppRunning = false;
         int uid = Utils.getPackageUid(getApplicationContext(), uploadApkPackageName);
@@ -233,10 +245,11 @@ public class MainActivity extends Activity {
         String message = "apk是否已安装：" + uploadApkIsInstall;
         if (uploadApkIsInstall) {
             int uploadApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), uploadApkPackageName);
-            message = message + ";版本：" + uploadApkVersionCode;
+            String uploadApkVersionName = Utils.getInstallVersionName(getApplicationContext(), uploadApkPackageName);
+            message = message + ";版本：" + uploadApkVersionCode + "," + uploadApkVersionName;
         }
         message = message + ";是否正常运行：" + isAppRunning;
-        message = message + ";守护Apk版本：" + serverApkVersionCode;
+        message = message + ";守护Apk版本：" + serverApkVersionCode + "," + serverApkVersionName;
         Log.e(TAG, "checkUploadAPKState: message =" + message);
         publishMessage(message);
     }
@@ -322,18 +335,26 @@ public class MainActivity extends Activity {
                     RemoteOperationResult result = downloadFileRemoteOperation.execute(ownCloudClient);
                     Log.e(TAG, "reInstallAPK: 下载 result =" + result);
                     if (result.isSuccess()) {
-
-
                         int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkPath);
-
                         publishMessage("开始安装apk 版本：" + apkFileVersionCode);
-
                         boolean installResult = Utils.installSilent(apkPath);
                         if (installResult) {
                             publishMessage("安装成功");
                             startRemoteActivity();
                         } else {
-                            publishMessage("安装失败");
+                            publishMessage("安装失败,尝试重新安装");
+                            Utils.uninstallApk();
+                            try {
+                                Thread.sleep(3000);
+                            } catch (Exception e) {
+                            }
+                            installResult = Utils.installSilent(apkPath);
+                            if (installResult) {
+                                publishMessage("安装成功");
+                                startRemoteActivity();
+                            } else {
+                                publishMessage("安装失败,尝试重新安装也失败了");
+                            }
                         }
                     } else {
                         publishMessage("下载失败:" + result);
@@ -401,7 +422,6 @@ public class MainActivity extends Activity {
                     if (Utils.isStroreUSBDevice(usbDevice.getProductName()) && deviceId == usbDevice.getDeviceId()) {
                         requestPermissionCount = 0;
                         deviceId = -1;
-                        deviceInit = false;
                         stopStoreUSBInitThreadExecutor();
                     }
                 }
@@ -457,6 +477,7 @@ public class MainActivity extends Activity {
         if (usbDevice == null) {
             return;
         }
+        sendBroadcastForUploadApk(true);
         Log.d(TAG, "usbConnect 存储U盘设备接入:" + usbDevice.getProductName());
         stopStoreUSBInitThreadExecutor();
         initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
@@ -467,6 +488,7 @@ public class MainActivity extends Activity {
                 if (!usbManager.hasPermission(usbDevice)) {
                     requestPermissionCount++;
                     if (requestPermissionCount > 20) {
+                        sendBroadcastForUploadApk(false);
                         Log.d(TAG, "usbConnect: 0000");
                         return;
                     }
@@ -514,13 +536,14 @@ public class MainActivity extends Activity {
                             UsbFile[] usbFileList = usbRootFolder.listFiles();
                             for (UsbFile usbFileItem : usbFileList) {
                                 if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
+                                    sendBroadcastForUploadApk(true);
                                     parseWifiConfiguration(usbFileItem);
                                 } else if (usbFileItem.getName().contains(usbUpdateBin)) {
+                                    sendBroadcastForUploadApk(true);
                                     parseBinAPK(usbFileItem, fileSystem);
                                 }
                             }
                             deviceId = usbDevice.getDeviceId();
-                            deviceInit = true;
                             Log.e(TAG, "run: deviceId =" + deviceId);
                         } catch (Exception e) {
                             Log.e(TAG, "usbConnect for file list Exception =" + e);
@@ -530,10 +553,24 @@ public class MainActivity extends Activity {
                         } catch (Exception e) {
                             Log.e(TAG, "run: device.close Exception =" + e);
                         }
+                        sendBroadcastForUploadApk(false);
                     }
                 }
+
+                sendBroadcastForUploadApk(false);
             }
         });
+    }
+
+
+    private void sendBroadcastForUploadApk(boolean initing) {
+        try {
+            Intent intent = new Intent(BroadcastIntent);
+            intent.putExtra(BroadcastInitingUSB, initing);
+            sendBroadcast(intent);
+        } catch (Exception e) {
+
+        }
     }
 
     private void parseWifiConfiguration(UsbFile usbFileItem) {

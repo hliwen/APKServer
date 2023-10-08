@@ -62,6 +62,16 @@ public class Utils {
         return 0;
     }
 
+    public static String getInstallVersionName(Context context, String packageName) {
+        try {
+            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
+            return packageInfo.versionName;
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        return "0";
+    }
+
     @SuppressLint("HardwareIds")
     public static String getPhoneImei(Context context) {
         try {
@@ -207,6 +217,28 @@ public class Utils {
             }
         }
         return installResult;
+    }
+
+
+    public static void uninstallApk() {
+        DataOutputStream dataOutputStream = null;
+        try {
+            Process process = Runtime.getRuntime().exec("su");
+            dataOutputStream = new DataOutputStream(process.getOutputStream());
+            String runCommand = "pm uninstall com.example.nextclouddemo";
+            dataOutputStream.write(runCommand.getBytes(Charset.forName("utf-8")));
+            dataOutputStream.flush();
+        } catch (Exception e) {
+
+        } finally {
+            try {
+                if (dataOutputStream != null) {
+                    dataOutputStream.close();
+                }
+            } catch (Exception e) {
+
+            }
+        }
     }
 
     /**
