@@ -66,6 +66,7 @@ public class MainActivity extends Activity {
     private static final String TAG = "remotelog_Serverlog";
     private static final String BroadcastIntent = "Initing_USB";
     private static final String sendBroadcastToServer = "sendBroadcastToServer";
+    private static final String checkServerUSBOpenration = "checkServerUSBOpenration";
     private static final String startUploadApk = "startUploadApk";
     private static final String BroadcastInitingUSB = "BroadcastInitingUSB";
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
@@ -113,6 +114,7 @@ public class MainActivity extends Activity {
         if (value.length > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(value, 111);
         }
+
         sendBroadcastForUploadApk(false, 1);
         EventBus.getDefault().register(this);
         registerMyReceiver();
@@ -443,6 +445,7 @@ public class MainActivity extends Activity {
         intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         intentFilter.addAction(sendBroadcastToServer);
+        intentFilter.addAction(checkServerUSBOpenration);
         registerReceiver(myBroadcast, intentFilter);
     }
 
@@ -534,12 +537,17 @@ public class MainActivity extends Activity {
                 case sendBroadcastToServer:
                     publishMessage(intent.getStringExtra("fucntion"));
                     break;
+                case checkServerUSBOpenration:
+                    sendBroadcastForUploadApk(isInitingUSB, 8);
+                    break;
                 default:
                     break;
             }
         }
     }
 
+
+    private boolean isInitingUSB;
 
     private synchronized void usbConnect(UsbDevice usbDevice) {
         Log.d(TAG, "usbConnect: start ...................... ");
@@ -566,6 +574,7 @@ public class MainActivity extends Activity {
                     Log.e(TAG, "usbConnect: 当前设备没有授权,productName :" + usbDevice.getProductName());
                     @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(GET_DEVICE_PERMISSION), 0);
                     usbManager.requestPermission(usbDevice, pendingIntent);
+
                     return;
                 }
                 requestPermissionCount = 0;
@@ -625,7 +634,6 @@ public class MainActivity extends Activity {
                         sendBroadcastForUploadApk(false, 6);
                     }
                 }
-
                 sendBroadcastForUploadApk(false, 7);
             }
         });
@@ -633,6 +641,7 @@ public class MainActivity extends Activity {
 
 
     private void sendBroadcastForUploadApk(boolean initing, int position) {
+        isInitingUSB = initing;
         try {
             Intent intent = new Intent(BroadcastIntent);
             intent.putExtra(BroadcastInitingUSB, initing);
@@ -1050,6 +1059,8 @@ public class MainActivity extends Activity {
                     }
                     break;
                 case msg_get_permission_timeout:
+                    sendBroadcastForUploadApk(false, 9);
+
                     initStoreUSBDevice();
                     break;
             }
