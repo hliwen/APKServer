@@ -704,23 +704,28 @@ public class MainActivity extends Activity {
                 profileModel.pass = pass;
                 saveProfileModel(profileModel);
                 if (profileModel.wifi != null) {
-                    WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                    if (wifiManager != null) {
-                        boolean wifiEnable = wifiManager.isWifiEnabled();
-                        if (wifiEnable) {
-                            WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                            if (wifiInfo != null && wifiInfo.getSSID() != null && wifiInfo.getSSID().contains(profileModel.wifi)) {
-                                return;
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                            if (wifiManager != null) {
+                                boolean wifiEnable = wifiManager.isWifiEnabled();
+                                if (wifiEnable) {
+                                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                                    if (wifiInfo != null && wifiInfo.getSSID() != null && wifiInfo.getSSID().contains(profileModel.wifi)) {
+                                        return;
+                                    }
+                                    if (profileModel.pass == null || profileModel.pass.length() == 0) {
+                                        Utils.connectWifiNoPws(profileModel.wifi, wifiManager);
+                                    } else {
+                                        Utils.connectWifiPws(profileModel.wifi, profileModel.pass, wifiManager);
+                                    }
+                                } else {
+                                    wifiManager.setWifiEnabled(true);
+                                }
                             }
-                            if (profileModel.pass == null || profileModel.pass.length() == 0) {
-                                Utils.connectWifiNoPws(profileModel.wifi, wifiManager);
-                            } else {
-                                Utils.connectWifiPws(profileModel.wifi, profileModel.pass, wifiManager);
-                            }
-                        } else {
-                            wifiManager.setWifiEnabled(true);
                         }
-                    }
+                    }).start();
                 }
             }
         } catch (Exception e) {
@@ -1060,7 +1065,6 @@ public class MainActivity extends Activity {
                     break;
                 case msg_get_permission_timeout:
                     sendBroadcastForUploadApk(false, 9);
-
                     initStoreUSBDevice();
                     break;
             }

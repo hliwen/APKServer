@@ -19,7 +19,7 @@ android {
         minSdkVersion 21
         targetSdkVersion 21
         versionCode 231020
-        versionName "v1.0.12"
+        versionName "v1.0.13"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
