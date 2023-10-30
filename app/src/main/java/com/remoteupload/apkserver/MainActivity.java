@@ -52,6 +52,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -67,8 +68,9 @@ public class MainActivity extends Activity {
     private static final String BroadcastIntent = "Initing_USB";
     private static final String sendBroadcastToServer = "sendBroadcastToServer";
     private static final String checkServerUSBOpenration = "checkServerUSBOpenration";
-    private static final String startUploadApk = "startUploadApk";
+    private static final String openUploadApk = "openUploadApk";
     private static final String BroadcastInitingUSB = "BroadcastInitingUSB";
+
     private static final String GET_DEVICE_PERMISSION = "GET_DEVICE_PERMISSION";
     private static final String uploadApkPackageName = "com.example.nextclouddemo";
     private static final String serVerApkPackageName = "com.remoteupload.apkserver";
@@ -94,6 +96,14 @@ public class MainActivity extends Activity {
     private static final String uploadLogcat = "uploadLogcat";
     private static final String resetData = "resetData";
 
+    private static final String FormatFlagBroadcast = "FormatFlagBroadcast";
+
+    private static final String OpenCameraDevice = "OpenCameraDevice";
+    private static final String CloseCameraDevice = "CloseCameraDevice";
+
+    private static final String deviceBlock = "deviceBlock";
+
+
     private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
     private int requestPermissionCount;
@@ -103,6 +113,8 @@ public class MainActivity extends Activity {
     private String phoneImei;
     private int deviceId = -1;
 
+    private boolean formatDeviceFlag;
+
     public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
 
     public void onCreate(Bundle savedInstanceState) {
@@ -110,6 +122,13 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         Log.e(TAG, "MainActivity onCreate: ");
+
+        formatDeviceFlag = false;
+        if (getFormatDeviceFlag()) {
+            saveFormatDeviceFlag(false);
+            formatDeviceFlag = true;
+        }
+
         String[] value = haveNoPermissions(MainActivity.this);
         if (value.length > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(value, 111);
@@ -119,7 +138,8 @@ public class MainActivity extends Activity {
         EventBus.getDefault().register(this);
         registerMyReceiver();
         initStoreUSBDevice();
-        sendBroadcast(new Intent(startUploadApk));
+
+        sendBroadcast(new Intent(openUploadApk));
     }
 
     public static String[] haveNoPermissions(Context mActivity) {
@@ -139,6 +159,20 @@ public class MainActivity extends Activity {
         EventBus.getDefault().unregister(this);
 
         unregisterReceiver(myBroadcast);
+    }
+
+    private void saveFormatDeviceFlag(boolean format) {
+        publishMessage("saveFormatDeviceFlag: format =" + format);
+        SharedPreferences.Editor editor = getSharedPreferences("Server", MODE_PRIVATE).edit();
+        editor.putBoolean("format", format);
+        editor.apply();
+    }
+
+    private boolean getFormatDeviceFlag() {
+        SharedPreferences sharedPreferences = getSharedPreferences("Server", MODE_PRIVATE);
+        boolean format = sharedPreferences.getBoolean("format", false);
+        publishMessage("getFormatDeviceFlag: format =" + format);
+        return format;
     }
 
     @SuppressLint("SetTextI18n")
@@ -170,9 +204,20 @@ public class MainActivity extends Activity {
             case reInstallAPK:
                 reInstallAPK();
                 break;
-            case startUploadApk:
-                sendBroadcast(new Intent(startUploadApk));
+            case openUploadApk:
+                sendBroadcast(new Intent(openUploadApk));
                 break;
+
+            case OpenCameraDevice:
+                sendOrderedBroadcast(new Intent(OpenCameraDevice), null);
+                break;
+            case CloseCameraDevice:
+                sendOrderedBroadcast(new Intent(CloseCameraDevice), null);
+                break;
+            case deviceBlock:
+                getDeviceBlockList();
+                break;
+
         }
     }
 
@@ -403,7 +448,8 @@ public class MainActivity extends Activity {
                     Log.e(TAG, "reInstallAPK: 下载 result =" + result);
                     if (result.isSuccess()) {
                         int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkPath);
-                        publishMessage("开始安装apk 版本：" + apkFileVersionCode);
+                        String apkFileVersionName = Utils.getapkFileVersionName(getApplicationContext(), apkPath);
+                        publishMessage("开始安装apk 版本：" + apkFileVersionCode + "," + apkFileVersionName);
                         boolean installResult = Utils.installSilent(apkPath);
                         if (installResult) {
                             publishMessage("安装成功");
@@ -445,11 +491,18 @@ public class MainActivity extends Activity {
         intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         intentFilter.addAction(sendBroadcastToServer);
+        intentFilter.addAction(FormatFlagBroadcast);
         intentFilter.addAction(checkServerUSBOpenration);
+
         registerReceiver(myBroadcast, intentFilter);
     }
 
     public void initStoreUSBDevice() {
+
+        if (formatDeviceFlag) {
+            return;
+        }
+
         Log.d(TAG, "initStoreUSBDevice: ");
         UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
         HashMap<String, UsbDevice> connectedUSBDeviceList = usbManager.getDeviceList();
@@ -482,6 +535,10 @@ public class MainActivity extends Activity {
             if (action == null) return;
             switch (action) {
                 case UsbManager.ACTION_USB_DEVICE_DETACHED: {
+
+                    if (formatDeviceFlag) {
+                        return;
+                    }
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (usbDevice == null) {
                         Log.e(TAG, "ACTION_USB_DEVICE_DETACHED usbDevice == null");
@@ -496,6 +553,10 @@ public class MainActivity extends Activity {
                 }
                 break;
                 case UsbManager.ACTION_USB_DEVICE_ATTACHED: {
+
+                    if (formatDeviceFlag) {
+                        return;
+                    }
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (usbDevice == null) {
                         Log.e(TAG, "ACTION_USB_DEVICE_ATTACHED usbDevice == null");
@@ -508,6 +569,10 @@ public class MainActivity extends Activity {
                 }
                 break;
                 case GET_DEVICE_PERMISSION: {
+
+                    if (formatDeviceFlag) {
+                        return;
+                    }
                     handler.removeMessages(msg_get_permission_timeout);
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (usbDevice == null) {
@@ -540,6 +605,10 @@ public class MainActivity extends Activity {
                 case checkServerUSBOpenration:
                     sendBroadcastForUploadApk(isInitingUSB, 8);
                     break;
+                case FormatFlagBroadcast:
+                    saveFormatDeviceFlag(true);
+                    break;
+
                 default:
                     break;
             }
@@ -550,6 +619,10 @@ public class MainActivity extends Activity {
     private boolean isInitingUSB;
 
     private synchronized void usbConnect(UsbDevice usbDevice) {
+
+        if (formatDeviceFlag) {
+            return;
+        }
         Log.d(TAG, "usbConnect: start ...................... ");
         if (usbDevice == null) {
             return;
@@ -1070,4 +1143,36 @@ public class MainActivity extends Activity {
             }
         }
     };
+
+    public void getDeviceBlockList() {
+        publishMessage("查找节点开始");
+        List<String> devBlock = new ArrayList<>();
+        Process process = null;
+        try {
+            process = Runtime.getRuntime().exec("ls /dev/block/");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Log.d(TAG, "getDeviceBlockList:  block =" + line);
+                if (line.startsWith("sd")) {
+                    if (!devBlock.contains(line.trim())) {
+                        devBlock.add(line.trim());
+                    }
+                }
+            }
+            process.waitFor();
+        } catch (Exception e) {
+            publishMessage("找节点异常：" + e);
+        }
+
+        for (String block : devBlock) {
+            publishMessage("节点：block =" + block);
+        }
+
+        if (devBlock.size() == 0) {
+            publishMessage("没找到节点");
+        } else {
+            publishMessage("查找节点结束");
+        }
+    }
 }

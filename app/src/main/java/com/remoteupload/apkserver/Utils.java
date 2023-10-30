@@ -51,6 +51,20 @@ public class Utils {
         }
         return 0;
     }
+    public static String getapkFileVersionName(Context context, String apkPath) {
+
+
+        try {
+            PackageManager pm = context.getPackageManager();
+            PackageInfo pkgInfo = pm.getPackageArchiveInfo(apkPath, PackageManager.GET_ACTIVITIES);
+            if (pkgInfo != null) {
+                return pkgInfo.versionName;
+            }
+        } catch (Exception e) {
+
+        }
+        return "0";
+    }
 
     public static int getInstallVersionCode(Context context, String packageName) {
         try {
