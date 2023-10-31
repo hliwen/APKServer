@@ -95,6 +95,7 @@ public class MainActivity extends Activity {
     private static final String shellcommand = "shellcommand:";
     private static final String uploadLogcat = "uploadLogcat";
     private static final String resetData = "resetData";
+    private static final String exitUploadApp = "exitUploadApp";
 
     private static final String FormatFlagBroadcast = "FormatFlagBroadcast";
 
@@ -103,6 +104,7 @@ public class MainActivity extends Activity {
 
     private static final String deviceBlock = "deviceBlock";
 
+    private static final String Exit_UploadAPP_Action = "Exit_UploadAPP_Action";
 
     private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
@@ -216,6 +218,9 @@ public class MainActivity extends Activity {
                 break;
             case deviceBlock:
                 getDeviceBlockList();
+                break;
+            case exitUploadApp:
+                sendOrderedBroadcast(new Intent(Exit_UploadAPP_Action), null);
                 break;
 
         }
