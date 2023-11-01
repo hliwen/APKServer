@@ -96,6 +96,8 @@ public class MainActivity extends Activity {
     private static final String uploadLogcat = "uploadLogcat";
     private static final String resetData = "resetData";
     private static final String exitUploadApp = "exitUploadApp";
+    private static final String enterDebug = "enterDebug";
+    private static final String exitDebug = "exitDebug";
 
     private static final String FormatFlagBroadcast = "FormatFlagBroadcast";
 
@@ -105,6 +107,9 @@ public class MainActivity extends Activity {
     private static final String deviceBlock = "deviceBlock";
 
     private static final String Exit_UploadAPP_Action = "Exit_UploadAPP_Action";
+
+    private static final String Enter_UploadAPP_Debug_Model = "Enter_UploadAPP_Debug_Model";
+    private static final String Exit_UploadAPP_Debug_Model = "Exit_UploadAPP_Debug_Model";
 
     private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
@@ -221,6 +226,12 @@ public class MainActivity extends Activity {
                 break;
             case exitUploadApp:
                 sendOrderedBroadcast(new Intent(Exit_UploadAPP_Action), null);
+                break;
+            case enterDebug:
+                sendOrderedBroadcast(new Intent(Enter_UploadAPP_Debug_Model), null);
+                break;
+            case exitDebug:
+                sendOrderedBroadcast(new Intent(Exit_UploadAPP_Debug_Model), null);
                 break;
 
         }
