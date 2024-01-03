@@ -24,7 +24,12 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.serialport.SerialPortFinder;
+import android.text.TextUtils;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
 
 import androidx.core.content.PermissionChecker;
 
@@ -34,6 +39,10 @@ import com.owncloud.android.lib.common.OwnCloudCredentialsFactory;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.resources.files.DownloadFileRemoteOperation;
 import com.owncloud.android.lib.resources.files.UploadFileRemoteOperation;
+import com.remoteupload.apkserver.serialport.Device;
+import com.remoteupload.apkserver.serialport.SerialPortManager;
+import com.remoteupload.apkserver.serialport.message.IMessage;
+import com.remoteupload.apkserver.serialport.util.ToastUtil;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -98,23 +107,27 @@ public class MainActivity extends Activity {
     private static final String exitUploadApp = "exitUploadApp";
     private static final String enterDebug = "enterDebug";
     private static final String exitDebug = "exitDebug";
-
     private static final String FormatFlagBroadcast = "FormatFlagBroadcast";
-
     private static final String OpenCameraDevice = "OpenCameraDevice";
     private static final String CloseCameraDevice = "CloseCameraDevice";
-
     private static final String deviceBlock = "deviceBlock";
+    private static final String networkState = "networkState";
+    private static final String AppState = "AppState";
+    private static final String openUploadApp = "openUploadApp";
 
+
+    private static final String CheckAppStateAction = "CheckAppStateAction";
+    private static final String ResponseAppStateAction = "ResponseAppStateAction";
     private static final String Exit_UploadAPP_Action = "Exit_UploadAPP_Action";
-
     private static final String Enter_UploadAPP_Debug_Model = "Enter_UploadAPP_Debug_Model";
     private static final String Exit_UploadAPP_Debug_Model = "Exit_UploadAPP_Debug_Model";
+
 
     private MyBroadcast myBroadcast;
     private ExecutorService initStoreUSBThreadExecutor;
     private int requestPermissionCount;
     private boolean netWorkonAvailableBroadcast;
+    private boolean netWorkAvailable;
     private String runCommand;
     private boolean installingAPK;
     private String phoneImei;
@@ -124,10 +137,29 @@ public class MainActivity extends Activity {
 
     public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
 
+    private boolean mOpened;
+    private Button testSerialPort;
+    private TextView receiveDataText;
+
+    private boolean remoteAppIsRuning;
+
+    private RxTimer checkAppStateRxTimer;
+    private RxTimer heatbeatRxTimer;
+
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        testSerialPort = findViewById(R.id.testSerialPort);
+        receiveDataText = findViewById(R.id.receiveDataText);
+        testSerialPort.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mOpened) {
+                    sendData("openSucceed");
+                }
+            }
+        });
         Log.e(TAG, "MainActivity onCreate: ");
 
         formatDeviceFlag = false;
@@ -147,7 +179,104 @@ public class MainActivity extends Activity {
         initStoreUSBDevice();
 
         sendBroadcast(new Intent(openUploadApk));
+
+        checkAppStateRxTimer = new RxTimer();
+        checkAppStateRxTimer.interval(10000, new RxTimer.RxAction() {
+            @Override
+            public void action(long number) {
+                if (Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName) && !remoteAppIsRuning) {
+                    startRemoteActivity();
+                }
+            }
+        });
+
+        heatbeatRxTimer = new RxTimer();
+        heatbeatRxTimer.interval(5000, new RxTimer.RxAction() {
+            @Override
+            public void action(long number) {
+                handler.sendEmptyMessageDelayed(msg_heatbeat_timeout, HEATBEAT_TIME);
+                sendOrderedBroadcast(new Intent(CheckAppStateAction), null);
+            }
+        });
+        initSerialPort();
     }
+
+    private void initSerialPort() {
+        SerialPortFinder serialPortFinder = new SerialPortFinder();
+        String[] mDevices = serialPortFinder.getAllDevicesPath();
+        if (mDevices == null || mDevices.length == 0) {
+            ToastUtil.showOne(this, "没有找到串口");
+            testSerialPort.setVisibility(View.GONE);
+        } else {
+            int index = -1;
+            for (int i = 0; i < mDevices.length; i++) {
+                String portName = mDevices[i];
+                if (TextUtils.isEmpty(portName)) continue;
+                if (portName.toLowerCase().contains("ttys2")) {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index < 0) {
+                ToastUtil.showOne(this, "打开串口失败");
+                return;
+            }
+
+
+            Device mDevice = new Device(mDevices[index], "115200");
+            mOpened = SerialPortManager.instance().open(mDevice) != null;
+            if (mOpened) {
+                ToastUtil.showOne(this, "成功打开串口");
+                sendData("openSucceed");
+                testSerialPort.setVisibility(View.VISIBLE);
+            } else {
+                ToastUtil.showOne(this, "打开串口失败");
+                testSerialPort.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void sendData(String text) {
+        ToastUtil.showOne(this, "发送数据:" + text);
+        SerialPortManager.instance().sendCommand(text);
+    }
+
+    private String messageTextString;
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onMessageEvent(IMessage message) {
+        if (message == null) return;
+        if (TextUtils.isEmpty(message.getMessage())) return;
+
+        messageTextString = messageTextString + "\n" + message.getMessage() + "\n";
+        receiveDataText.setText(message.getMessage());
+
+        switch (message.getMessage().replaceAll("\\r|\\n", "")) {
+            case networkState:
+                if (netWorkAvailable) {
+                    sendData("networkState1");
+                } else if (netWorkonAvailableBroadcast) {
+                    sendData("networkState2");
+                } else {
+                    sendData("networkState3");
+                }
+                break;
+            case AppState:
+                if (uploadApkIsRuning()) {
+                    sendData("AppState1");
+                } else if (!Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName)) {
+                    sendData("AppState2");
+                } else {
+                    sendData("AppState3");
+                }
+                break;
+            case openUploadApp:
+                startRemoteActivity();
+                break;
+        }
+    }
+
 
     public static String[] haveNoPermissions(Context mActivity) {
         ArrayList<String> haveNo = new ArrayList<>();
@@ -166,7 +295,10 @@ public class MainActivity extends Activity {
         EventBus.getDefault().unregister(this);
 
         unregisterReceiver(myBroadcast);
+        if (checkAppStateRxTimer != null) checkAppStateRxTimer.cancel();
+        if (heatbeatRxTimer != null) heatbeatRxTimer.cancel();
     }
+
 
     private void saveFormatDeviceFlag(boolean format) {
         publishMessage("saveFormatDeviceFlag: format =" + format);
@@ -233,7 +365,6 @@ public class MainActivity extends Activity {
             case exitDebug:
                 sendOrderedBroadcast(new Intent(Exit_UploadAPP_Debug_Model), null);
                 break;
-
         }
     }
 
@@ -298,6 +429,20 @@ public class MainActivity extends Activity {
         int serverApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), serVerApkPackageName);
         String serverApkVersionName = Utils.getInstallVersionName(getApplicationContext(), serVerApkPackageName);
 
+
+        String message = "apk是否已安装：" + uploadApkIsInstall;
+        if (uploadApkIsInstall) {
+            int uploadApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), uploadApkPackageName);
+            String uploadApkVersionName = Utils.getInstallVersionName(getApplicationContext(), uploadApkPackageName);
+            message = message + ";版本：" + uploadApkVersionCode + "," + uploadApkVersionName;
+        }
+        message = message + ";是否正常运行：" + uploadApkIsRuning() + "," + remoteAppIsRuning;
+        message = message + ";守护Apk版本：" + serverApkVersionCode + "," + serverApkVersionName;
+        Log.e(TAG, "checkUploadAPKState: message =" + message);
+        publishMessage(message);
+    }
+
+    private boolean uploadApkIsRuning() {
         boolean isAppRunning = false;
         int uid = Utils.getPackageUid(getApplicationContext(), uploadApkPackageName);
         if (uid > 0) {
@@ -307,17 +452,7 @@ public class MainActivity extends Activity {
                 isAppRunning = true;
             }
         }
-
-        String message = "apk是否已安装：" + uploadApkIsInstall;
-        if (uploadApkIsInstall) {
-            int uploadApkVersionCode = Utils.getInstallVersionCode(getApplicationContext(), uploadApkPackageName);
-            String uploadApkVersionName = Utils.getInstallVersionName(getApplicationContext(), uploadApkPackageName);
-            message = message + ";版本：" + uploadApkVersionCode + "," + uploadApkVersionName;
-        }
-        message = message + ";是否正常运行：" + isAppRunning;
-        message = message + ";守护Apk版本：" + serverApkVersionCode + "," + serverApkVersionName;
-        Log.e(TAG, "checkUploadAPKState: message =" + message);
-        publishMessage(message);
+        return isAppRunning;
     }
 
     private void uploadLogcat() {
@@ -509,6 +644,7 @@ public class MainActivity extends Activity {
         intentFilter.addAction(sendBroadcastToServer);
         intentFilter.addAction(FormatFlagBroadcast);
         intentFilter.addAction(checkServerUSBOpenration);
+        intentFilter.addAction(ResponseAppStateAction);
 
         registerReceiver(myBroadcast, intentFilter);
     }
@@ -608,6 +744,7 @@ public class MainActivity extends Activity {
                         Log.d(TAG, "网络断开广播");
                         handler.removeMessages(msg_network_connect);
                         netWorkonAvailableBroadcast = false;
+                        netWorkAvailable = false;
                     } else if (info.getState().equals(NetworkInfo.State.CONNECTED)) {
                         Log.d(TAG, "网络连接广播");
                         handler.removeMessages(msg_network_connect);
@@ -623,6 +760,10 @@ public class MainActivity extends Activity {
                     break;
                 case FormatFlagBroadcast:
                     saveFormatDeviceFlag(true);
+                    break;
+                case ResponseAppStateAction:
+                    remoteAppIsRuning = true;
+                    handler.removeMessages(msg_heatbeat_timeout);
                     break;
 
                 default:
@@ -916,6 +1057,7 @@ public class MainActivity extends Activity {
                     }
                     remote_version = Utils.getRemoteVersion(appVersionURL);
                 }
+                netWorkAvailable = true;
                 Log.d(TAG, "netWorkConnect: remote_version =" + remote_version);
 
                 if (!Utils.isAppInstalled(getApplicationContext(), uploadApkPackageName)) {
@@ -1135,9 +1277,13 @@ public class MainActivity extends Activity {
     }
 
 
+    private static final int HEATBEAT_TIME = 3000;
+
     private static final int msg_network_connect = 1;
     private static final int msg_resend_mqtt = 2;
     private static final int msg_get_permission_timeout = 3;
+    private static final int msg_heatbeat_timeout = 4;
+
 
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
@@ -1155,6 +1301,9 @@ public class MainActivity extends Activity {
                 case msg_get_permission_timeout:
                     sendBroadcastForUploadApk(false, 9);
                     initStoreUSBDevice();
+                    break;
+                case msg_heatbeat_timeout:
+                    remoteAppIsRuning = false;
                     break;
             }
         }
