@@ -138,7 +138,7 @@ public class MainActivity extends Activity {
     public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
 
     private boolean mOpened;
-    private Button testSerialPort;
+
     private TextView receiveDataText;
 
     private boolean remoteAppIsRuning;
@@ -150,16 +150,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        testSerialPort = findViewById(R.id.testSerialPort);
+
         receiveDataText = findViewById(R.id.receiveDataText);
-        testSerialPort.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mOpened) {
-                    sendData("openSucceed");
-                }
-            }
-        });
+
         Log.e(TAG, "MainActivity onCreate: ");
 
         formatDeviceFlag = false;
@@ -206,7 +199,7 @@ public class MainActivity extends Activity {
         String[] mDevices = serialPortFinder.getAllDevicesPath();
         if (mDevices == null || mDevices.length == 0) {
             ToastUtil.showOne(this, "没有找到串口");
-            testSerialPort.setVisibility(View.GONE);
+
         } else {
             int index = -1;
             for (int i = 0; i < mDevices.length; i++) {
@@ -228,11 +221,8 @@ public class MainActivity extends Activity {
             mOpened = SerialPortManager.instance().open(mDevice) != null;
             if (mOpened) {
                 ToastUtil.showOne(this, "成功打开串口");
-                sendData("openSucceed");
-                testSerialPort.setVisibility(View.VISIBLE);
             } else {
                 ToastUtil.showOne(this, "打开串口失败");
-                testSerialPort.setVisibility(View.GONE);
             }
         }
     }
