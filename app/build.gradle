@@ -18,8 +18,8 @@ android {
         applicationId "com.remoteupload.apkserver"
         minSdkVersion 21
         targetSdkVersion 21
-        versionCode 24010307
-        versionName "v1.0.24"
+        versionCode 24010801
+        versionName "v1.0.25"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -90,4 +90,6 @@ dependencies {
     // 硬件操作工具类
     implementation 'com.licheedev:hardwareutils:1.0.0'
     implementation 'com.licheedev:logplus:1.0.0'
+
+    implementation 'com.google.code.gson:gson:2.8.9'
 }

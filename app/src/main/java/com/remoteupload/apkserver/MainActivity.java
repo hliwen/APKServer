@@ -33,6 +33,8 @@ import android.widget.TextView;
 
 import androidx.core.content.PermissionChecker;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.owncloud.android.lib.common.OwnCloudClient;
 import com.owncloud.android.lib.common.OwnCloudClientFactory;
 import com.owncloud.android.lib.common.OwnCloudCredentialsFactory;
@@ -114,6 +116,7 @@ public class MainActivity extends Activity {
     private static final String networkState = "networkState";
     private static final String AppState = "AppState";
     private static final String openUploadApp = "openUploadApp";
+    private static final String wifiConfiguration = "wifiConfiguration";
 
 
     private static final String CheckAppStateAction = "CheckAppStateAction";
@@ -241,8 +244,59 @@ public class MainActivity extends Activity {
 
         messageTextString = messageTextString + "\n" + message.getMessage() + "\n";
         receiveDataText.setText(message.getMessage());
+        String data = message.getMessage();
+        if (data.contains(wifiConfiguration)) {//wifiConfiguration{"SN":"202302050000001","wifi":"SNOPPA","pass":"littlehat708"}
 
-        switch (message.getMessage().replaceAll("\\r|\\n", "")) {
+            try {
+                data = data.substring(data.indexOf(wifiConfiguration) + wifiConfiguration.length());
+                JsonParser jsonParser = new JsonParser();
+                JsonObject jsonObject = jsonParser.parse(data).getAsJsonObject();
+                ProfileModel profileModel = new ProfileModel();
+
+                if (jsonObject.has("SN")) {
+                    profileModel.SN = jsonObject.get("SN").getAsString();
+                }
+                if (jsonObject.has("wifi")) {
+                    profileModel.wifi = jsonObject.get("wifi").getAsString();
+                }
+                if (jsonObject.has("pass")) {
+                    profileModel.pass = jsonObject.get("pass").getAsString();
+                }
+
+                saveProfileModel(profileModel);
+                if (profileModel.wifi != null) {
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                            if (wifiManager != null) {
+                                boolean wifiEnable = wifiManager.isWifiEnabled();
+                                if (wifiEnable) {
+                                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                                    if (wifiInfo != null && wifiInfo.getSSID() != null && wifiInfo.getSSID().contains(profileModel.wifi)) {
+                                        return;
+                                    }
+                                    if (TextUtils.isEmpty(profileModel.pass)) {
+                                        Utils.connectWifiNoPws(profileModel.wifi, wifiManager);
+                                    } else {
+                                        Utils.connectWifiPws(profileModel.wifi, profileModel.pass, wifiManager);
+                                    }
+                                } else {
+                                    wifiManager.setWifiEnabled(true);
+                                }
+                            }
+                        }
+                    }).start();
+                }
+            } catch (Exception e) {
+
+            }
+
+            return;
+        }
+        data = data.replaceAll("\\r|\\n", "");
+
+        switch (data) {
             case networkState:
                 if (netWorkAvailable) {
                     sendData("networkState1");
