@@ -243,7 +243,8 @@ public class MainActivity extends Activity {
         if (TextUtils.isEmpty(message.getMessage())) return;
 
         messageTextString = messageTextString + "\n" + message.getMessage() + "\n";
-        receiveDataText.setText(message.getMessage());
+
+        receiveDataText.setText(messageTextString);
         String data = message.getMessage();
         if (data.contains(wifiConfiguration)) {//wifiConfiguration{"SN":"202302050000001","wifi":"SNOPPA","pass":"littlehat708"}
 

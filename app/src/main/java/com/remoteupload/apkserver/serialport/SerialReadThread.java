@@ -21,6 +21,7 @@ public class SerialReadThread extends Thread {
     private static final String TAG = "SerialReadThread";
 
     private BufferedInputStream mInputStream;
+    private String subString = "";
 
     public SerialReadThread(InputStream is) {
         mInputStream = new BufferedInputStream(is);
@@ -69,8 +70,20 @@ public class SerialReadThread extends Thread {
     private void onDataReceive(byte[] received, int size) {
         byte[] temp = new byte[size];
         System.arraycopy(received, 0, temp, 0, size);
-        String name = new String(temp, StandardCharsets.UTF_8);
-        LogManager.instance().post(new RecvMessage(name));
+        String message = new String(temp, StandardCharsets.UTF_8);
+
+        if (message == null) {
+            return;
+        }
+        if (message.endsWith("#")) {
+            subString = subString + message;
+            subString = subString.substring(0, subString.length() - 1);
+            LogManager.instance().post(new RecvMessage(subString));
+            subString = "";
+        } else {
+            subString = subString + message;
+        }
+
     }
 
     /**
