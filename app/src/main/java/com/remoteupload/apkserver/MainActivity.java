@@ -247,7 +247,6 @@ public class MainActivity extends Activity {
         receiveDataText.setText(messageTextString);
         String data = message.getMessage();
         if (data.contains(wifiConfiguration)) {//wifiConfiguration{"SN":"202302050000001","wifi":"SNOPPA","pass":"littlehat708"}
-
             try {
                 data = data.substring(data.indexOf(wifiConfiguration) + wifiConfiguration.length());
                 JsonParser jsonParser = new JsonParser();
@@ -288,9 +287,12 @@ public class MainActivity extends Activity {
                             }
                         }
                     }).start();
+                    sendData("wifiConfigurationSuccess");
+                } else {
+                    sendData("wifiConfigurationError");
                 }
             } catch (Exception e) {
-
+                sendData("wifiConfigurationError");
             }
 
             return;
