@@ -613,6 +613,7 @@ public class MainActivity extends Activity {
             }
         }
 
+        publishMessage("resetData success");
 
     }
 
