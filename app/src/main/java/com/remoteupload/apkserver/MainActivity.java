@@ -415,7 +415,7 @@ public class MainActivity extends Activity {
                 break;
         }
     }
- 
+
     private void runShellCommander(String message) {
         runCommand = message;
         new Thread(new Runnable() {
