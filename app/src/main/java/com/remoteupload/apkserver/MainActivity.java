@@ -24,11 +24,10 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.os.storage.StorageManager;
 import android.serialport.SerialPortFinder;
 import android.text.TextUtils;
 import android.util.Log;
-import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.core.content.PermissionChecker;
@@ -57,6 +56,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -118,7 +119,6 @@ public class MainActivity extends Activity {
     private static final String openUploadApp = "openUploadApp";
     private static final String wifiConfiguration = "wifiConfiguration";
 
-
     private static final String CheckAppStateAction = "CheckAppStateAction";
     private static final String ResponseAppStateAction = "ResponseAppStateAction";
     private static final String Exit_UploadAPP_Action = "Exit_UploadAPP_Action";
@@ -148,6 +148,7 @@ public class MainActivity extends Activity {
 
     private RxTimer checkAppStateRxTimer;
     private RxTimer heatbeatRxTimer;
+
 
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -414,7 +415,7 @@ public class MainActivity extends Activity {
                 break;
         }
     }
-
+ 
     private void runShellCommander(String message) {
         runCommand = message;
         new Thread(new Runnable() {
