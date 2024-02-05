@@ -93,7 +93,7 @@ public class MainActivity extends Activity {
     static String remoteApkName = "app-release.apk";
     static String remoteURL = "https://pandev.iothm.top:7010";
     static String remoteUserName = "404085991@qq.com";
-        static String remoteUserPass = "404085991@qq.com1234YGBH";
+    static String remoteUserPass = "404085991@qq.com1234YGBH";
     static String appName = "remoteUpload.apk";
     static String usbUpdateName = "update.apk";
     static String usbUpdateBin = "update.bin";
@@ -208,7 +208,8 @@ public class MainActivity extends Activity {
             int index = -1;
             for (int i = 0; i < mDevices.length; i++) {
                 String portName = mDevices[i];
-                if (TextUtils.isEmpty(portName)) continue;
+                if (TextUtils.isEmpty(portName))
+                    continue;
                 if (portName.toLowerCase().contains("ttys2")) {
                     index = i;
                     break;
@@ -240,8 +241,10 @@ public class MainActivity extends Activity {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onMessageEvent(IMessage message) {
-        if (message == null) return;
-        if (TextUtils.isEmpty(message.getMessage())) return;
+        if (message == null)
+            return;
+        if (TextUtils.isEmpty(message.getMessage()))
+            return;
 
         messageTextString = messageTextString + "\n" + message.getMessage() + "\n";
 
@@ -343,8 +346,10 @@ public class MainActivity extends Activity {
         EventBus.getDefault().unregister(this);
 
         unregisterReceiver(myBroadcast);
-        if (checkAppStateRxTimer != null) checkAppStateRxTimer.cancel();
-        if (heatbeatRxTimer != null) heatbeatRxTimer.cancel();
+        if (checkAppStateRxTimer != null)
+            checkAppStateRxTimer.cancel();
+        if (heatbeatRxTimer != null)
+            heatbeatRxTimer.cancel();
     }
 
 
@@ -365,7 +370,8 @@ public class MainActivity extends Activity {
     @SuppressLint("SetTextI18n")
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void receiveMqttMessage(String message) {
-        if (message == null) return;
+        if (message == null)
+            return;
         message = message.trim();
         if (message.contains("mqttConnected")) {
             return;
@@ -650,7 +656,7 @@ public class MainActivity extends Activity {
                         int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkPath);
                         String apkFileVersionName = Utils.getapkFileVersionName(getApplicationContext(), apkPath);
                         publishMessage("开始安装apk 版本：" + apkFileVersionCode + "," + apkFileVersionName);
-                            boolean installResult = Utils.installSilent(apkPath);
+                        boolean installResult = Utils.installSilent(apkPath);
                         if (installResult) {
                             publishMessage("安装成功");
                             startRemoteActivity();
@@ -733,7 +739,8 @@ public class MainActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if (action == null) return;
+            if (action == null)
+                return;
             switch (action) {
                 case UsbManager.ACTION_USB_DEVICE_DETACHED: {
 
@@ -955,7 +962,8 @@ public class MainActivity extends Activity {
 
             if (data != null) {
                 for (String datum : data) {
-                    if (datum == null) continue;
+                    if (datum == null)
+                        continue;
                     datum.trim();
                     if (datum.startsWith("wifi:")) {
                         try {
@@ -1243,7 +1251,8 @@ public class MainActivity extends Activity {
     private void publishMessage(String message) {
         Log.d(TAG, "publishMessage: message =" + message);
 
-        if (message == null) return;
+        if (message == null)
+            return;
 
         if (MqttManager.isConnected()) {
             MqttManager.getInstance().publish("/camera/v2/device/" + phoneImei + "AAA/android/receive", 1, message);
