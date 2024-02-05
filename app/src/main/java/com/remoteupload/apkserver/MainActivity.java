@@ -93,7 +93,7 @@ public class MainActivity extends Activity {
     static String remoteApkName = "app-release.apk";
     static String remoteURL = "https://pandev.iothm.top:7010";
     static String remoteUserName = "404085991@qq.com";
-    static String remoteUserPass = "404085991@qq.com1234YGBH";
+        static String remoteUserPass = "404085991@qq.com1234YGBH";
     static String appName = "remoteUpload.apk";
     static String usbUpdateName = "update.apk";
     static String usbUpdateBin = "update.bin";
@@ -650,7 +650,7 @@ public class MainActivity extends Activity {
                         int apkFileVersionCode = Utils.getapkFileVersionCode(getApplicationContext(), apkPath);
                         String apkFileVersionName = Utils.getapkFileVersionName(getApplicationContext(), apkPath);
                         publishMessage("开始安装apk 版本：" + apkFileVersionCode + "," + apkFileVersionName);
-                        boolean installResult = Utils.installSilent(apkPath);
+                            boolean installResult = Utils.installSilent(apkPath);
                         if (installResult) {
                             publishMessage("安装成功");
                             startRemoteActivity();
