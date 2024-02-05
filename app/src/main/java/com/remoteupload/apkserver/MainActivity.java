@@ -63,6 +63,7 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -127,15 +128,12 @@ public class MainActivity extends Activity {
 
 
     private MyBroadcast myBroadcast;
-    private ExecutorService initStoreUSBThreadExecutor;
-    private int requestPermissionCount;
+
     private boolean netWorkonAvailableBroadcast;
     private boolean netWorkAvailable;
     private String runCommand;
     private boolean installingAPK;
     private String phoneImei;
-    private int deviceId = -1;
-
     private boolean formatDeviceFlag;
 
     public static final String[] PERMISSIONS = {android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.READ_PHONE_STATE, Manifest.permission.GET_TASKS};
@@ -170,10 +168,13 @@ public class MainActivity extends Activity {
             requestPermissions(value, 111);
         }
 
-        sendBroadcastForUploadApk(false, 1);
+
+        usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+
+        sendBroadcastForUploadApk(1);
         EventBus.getDefault().register(this);
         registerMyReceiver();
-        initStoreUSBDevice();
+        startScannerDevice();
 
         sendBroadcast(new Intent(openUploadApk));
 
@@ -694,7 +695,6 @@ public class MainActivity extends Activity {
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         intentFilter.addAction(GET_DEVICE_PERMISSION);
-        intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         intentFilter.addAction(sendBroadcastToServer);
         intentFilter.addAction(FormatFlagBroadcast);
@@ -702,36 +702,6 @@ public class MainActivity extends Activity {
         intentFilter.addAction(ResponseAppStateAction);
 
         registerReceiver(myBroadcast, intentFilter);
-    }
-
-    public void initStoreUSBDevice() {
-
-        if (formatDeviceFlag) {
-            return;
-        }
-
-        Log.d(TAG, "initStoreUSBDevice: ");
-        UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-        HashMap<String, UsbDevice> connectedUSBDeviceList = usbManager.getDeviceList();
-        if (connectedUSBDeviceList == null || connectedUSBDeviceList.size() <= 0) {
-            return;
-        }
-        Collection<UsbDevice> usbDevices = connectedUSBDeviceList.values();
-        if (usbDevices == null) {
-            return;
-        }
-
-        for (UsbDevice usbDevice : usbDevices) {
-            if (usbDevice == null) {
-                continue;
-            }
-            String productName = usbDevice.getProductName();
-            if (productName == null || !Utils.isStroreUSBDevice(productName)) {
-                continue;
-            }
-            usbConnect(usbDevice);
-            return;
-        }
     }
 
 
@@ -749,14 +719,12 @@ public class MainActivity extends Activity {
                     }
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (usbDevice == null) {
-                        Log.e(TAG, "ACTION_USB_DEVICE_DETACHED usbDevice == null");
+                        Log.e(TAG, "ReceiverCamera onReceive: action =" + action + ",usbDevice == null");
                         return;
                     }
-                    Log.e(TAG, "ACTION_USB_DEVICE_DETACHED getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName()) && deviceId == usbDevice.getDeviceId()) {
-                        requestPermissionCount = 0;
-                        deviceId = -1;
-                        stopStoreUSBInitThreadExecutor();
+                    Log.e(TAG, "ReceiverCamera onReceive: action =" + action + ", getProductName =" + usbDevice.getProductName());
+                    if (operatingDevice != null && usbDevice.equals(operatingDevice)) {
+                        detachedDevice(true);
                     }
                 }
                 break;
@@ -765,35 +733,27 @@ public class MainActivity extends Activity {
                     if (formatDeviceFlag) {
                         return;
                     }
+                    Log.d(TAG, "ReceiverStoreUSB onReceive: ACTION_USB_DEVICE_ATTACHED");
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (usbDevice == null) {
-                        Log.e(TAG, "ACTION_USB_DEVICE_ATTACHED usbDevice == null");
+                        Log.e(TAG, "ReceiverStoreUSB onReceive: action =" + action + ",usbDevice == null");
                         return;
                     }
-                    Log.e(TAG, "ACTION_USB_DEVICE_ATTACHED getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
-                        usbConnect(usbDevice);
+                    Log.e(TAG, "ReceiverCamera onReceive: action =" + action + ", getProductName =" + usbDevice.getProductName());
+
+                    if (!Utils.isStroreUSBDevice(usbDevice.getProductName())) {
+                        return;
+                    }
+
+                    if (operatingDevice == null) {
+                        startScannerDevice();
+                    } else {
+                        if (!usbDevice.equals(operatingDevice)) {
+                            startScannerDevice();
+                        }
                     }
                 }
                 break;
-                case GET_DEVICE_PERMISSION: {
-
-                    if (formatDeviceFlag) {
-                        return;
-                    }
-                    handler.removeMessages(msg_get_permission_timeout);
-                    UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (usbDevice == null) {
-                        Log.e(TAG, "GET_DEVICE_PERMISSION usbDevice == null");
-                        return;
-                    }
-                    Log.e(TAG, "GET_DEVICE_PERMISSION getProductName =" + usbDevice.getProductName());
-                    if (Utils.isStroreUSBDevice(usbDevice.getProductName())) {
-                        usbConnect(usbDevice);
-                    }
-                }
-                break;
-
                 case ConnectivityManager.CONNECTIVITY_ACTION: {
                     NetworkInfo info = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
                     if (info.getState().equals(NetworkInfo.State.DISCONNECTED)) {
@@ -812,7 +772,7 @@ public class MainActivity extends Activity {
                     publishMessage(intent.getStringExtra("fucntion"));
                     break;
                 case checkServerUSBOpenration:
-                    sendBroadcastForUploadApk(isInitingUSB, 8);
+                    sendBroadcastForUploadApk(2);
                     break;
                 case FormatFlagBroadcast:
                     saveFormatDeviceFlag(true);
@@ -829,108 +789,171 @@ public class MainActivity extends Activity {
     }
 
 
-    private boolean isInitingUSB;
+    private UsbDevice operatingDevice;
+    private boolean completedScanner = false;
+    private boolean isOperatingDevice = false;
+    private UsbManager usbManager;
+    private ExecutorService scannerThreadExecutor;
 
-    private synchronized void usbConnect(UsbDevice usbDevice) {
 
+    public void detachedDevice(boolean broadcast) {
+        Log.d(TAG, "U盘 detachedDevice: broadcast =" + broadcast);
+        completedScanner = false;
+        if (operatingDevice != null) {
+            try {
+                UsbMassStorageDevice usbMassStorageDevice = Utils.getUsbMass(operatingDevice, getApplicationContext());
+                if (usbMassStorageDevice != null) {
+                    usbMassStorageDevice.close();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "usbDissConnect 设备断开异常 e =" + e);
+            }
+        }
+        operatingDevice = null;
+        isOperatingDevice = false;
+        sendBroadcastForUploadApk(3);
+    }
+
+    public void startScannerDevice() {
         if (formatDeviceFlag) {
             return;
         }
-        Log.d(TAG, "usbConnect: start ...................... ");
-        if (usbDevice == null) {
+        detachedDevice(false);
+        isOperatingDevice = true;
+        sendBroadcastForUploadApk(4);
+        if (usbManager == null) {
+            usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        }
+
+        if (usbManager == null) {
+            Log.e(TAG, "startScannerDevice: 系统异常 usbManager==null");
+            isOperatingDevice = false;
+            sendBroadcastForUploadApk(5);
             return;
         }
-        sendBroadcastForUploadApk(true, 2);
-        Log.d(TAG, "usbConnect 存储U盘设备接入:" + usbDevice.getProductName());
-        stopStoreUSBInitThreadExecutor();
-        initStoreUSBThreadExecutor = Executors.newSingleThreadExecutor();
-        initStoreUSBThreadExecutor.execute(new Runnable() {
+
+        HashMap<String, UsbDevice> deviceMap = usbManager.getDeviceList();
+        Collection<UsbDevice> usbDeviceList = null;
+        if (deviceMap != null) {
+            usbDeviceList = deviceMap.values();
+        }
+        if (deviceMap == null || deviceMap.size() <= 0 || usbDeviceList == null) {
+            isOperatingDevice = false;
+            sendBroadcastForUploadApk(6);
+            return;
+        }
+
+        for (UsbDevice usbDevice : usbDeviceList) {
+            if (usbDevice == null) {
+                continue;
+            }
+
+            String productName = usbDevice.getProductName();
+            Log.e(TAG, "startScannerDevice: 当前设备名称：" + productName);
+            if (productName == null || !Utils.isStroreUSBDevice(productName)) {
+                continue;
+            }
+            operatingDevice = usbDevice;
+        }
+
+        if (operatingDevice == null) {
+            Log.e(TAG, "startScannerDevice:  没有检测到有U盘设备");
+            isOperatingDevice = false;
+            sendBroadcastForUploadApk(7);
+            return;
+        }
+
+        scannerThreadExecutor = Executors.newSingleThreadExecutor();
+        scannerThreadExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-                if (!usbManager.hasPermission(usbDevice)) {
-                    requestPermissionCount++;
-                    if (requestPermissionCount > 20) {
-                        sendBroadcastForUploadApk(false, 3);
-                        Log.d(TAG, "usbConnect: 0000");
-                        return;
-                    }
-                    handler.removeMessages(msg_get_permission_timeout);
-                    handler.sendEmptyMessageDelayed(msg_get_permission_timeout, 3000);
-                    Log.e(TAG, "usbConnect: 当前设备没有授权,productName :" + usbDevice.getProductName());
-                    @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(GET_DEVICE_PERMISSION), 0);
-                    usbManager.requestPermission(usbDevice, pendingIntent);
 
+                int requestPermissionCount = 0;
+                while (isOperatingDevice && !usbManager.hasPermission(operatingDevice) && requestPermissionCount < 10) {
+                    requestPermissionCount++;
+                    try {
+                        Thread.sleep(2000);
+                        @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, new Intent(GET_DEVICE_PERMISSION), 0);
+                        usbManager.requestPermission(operatingDevice, pendingIntent);
+                        Thread.sleep(2000);
+                    } catch (InterruptedException e) {
+                    }
+                }
+
+                if (!isOperatingDevice) {
+                    Log.e(TAG, "startScannerDevice:  等待U盘授权异常");
+                    isOperatingDevice = false;
+                    sendBroadcastForUploadApk(8);
                     return;
                 }
-                requestPermissionCount = 0;
-                int interfaceCount = usbDevice.getInterfaceCount();
-                Log.d(TAG, "usbConnect interfaceCount =" + interfaceCount);
-                for (int i = 0; i < interfaceCount; i++) {
-                    UsbInterface usbInterface = usbDevice.getInterface(i);
-                    if (usbInterface == null) {
-                        Log.d(TAG, "usbConnect: 1111");
-                        continue;
+
+                if (usbManager.hasPermission(operatingDevice)) {
+                    Log.e(TAG, "startScannerDevice: 授权完成，真正开始操作U盘");
+                    UsbMassStorageDevice usbMassStorageDevice = Utils.getUsbMass(operatingDevice, getApplicationContext());
+                    if (usbMassStorageDevice == null) {
+                        Log.e(TAG, "usbDeviceScanner: USBDevice 转换成UsbMassStorageDevice 对象 失败");
+                        isOperatingDevice = false;
+                        sendBroadcastForUploadApk(9);
+                        return;
                     }
-                    Log.e(TAG, "usbConnect getInterfaceClass =" + usbInterface.getInterfaceClass());
-                    if (usbInterface.getInterfaceClass() == UsbConstants.USB_CLASS_MASS_STORAGE) {
-                        UsbMassStorageDevice device = Utils.getUsbMass(usbDevice, getApplicationContext());
-                        if (device == null) {
-                            Log.d(TAG, "usbConnect 22222");
-                            continue;
-                        }
-                        try {
-                            Log.d(TAG, "usbConnect: init start.................");
-                            device.init();
-                            Log.d(TAG, "usbConnect: init end.................");
-                        } catch (Exception e) {
-                            Log.e(TAG, "usbConnect : device.init 设备初始化错误 " + e);
-                            continue;
-                        }
 
-                        if (device.getPartitions().size() <= 0) {
-                            Log.e(TAG, "usbConnect: " + "device.getPartitions().size() error, 无法获取到设备分区");
-                            continue;
-                        }
-                        Partition partition = device.getPartitions().get(0);
-                        FileSystem fileSystem = partition.getFileSystem();
-                        UsbFile usbRootFolder = fileSystem.getRootDirectory();
+                    try {
+                        usbMassStorageDevice.init();
+                    } catch (Exception e) {
+                        Log.e(TAG, "startScannerDevice : usbMassStorageDevice.init 设备初始化错误 " + e);
+                        isOperatingDevice = false;
+                        sendBroadcastForUploadApk(10);
+                        return;
+                    }
 
-                        try {
-                            UsbFile[] usbFileList = usbRootFolder.listFiles();
-                            for (UsbFile usbFileItem : usbFileList) {
-                                if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
-                                    sendBroadcastForUploadApk(true, 4);
-                                    parseWifiConfiguration(usbFileItem);
-                                } else if (usbFileItem.getName().contains(usbUpdateBin)) {
-                                    sendBroadcastForUploadApk(true, 5);
-                                    parseBinAPK(usbFileItem, fileSystem);
-                                }
+                    if (usbMassStorageDevice.getPartitions().size() <= 0) {
+                        Log.e(TAG, "startScannerDevice: " + "device.getPartitions().size() error, 无法获取到设备分区");
+                        isOperatingDevice = false;
+                        sendBroadcastForUploadApk(11);
+                        return;
+                    }
+
+
+                    Partition partition = usbMassStorageDevice.getPartitions().get(0);
+                    FileSystem fileSystem = partition.getFileSystem();
+                    UsbFile usbRootFolder = fileSystem.getRootDirectory();
+
+                    UsbFile[] usbFileList = null;
+                    try {
+                        usbFileList = usbRootFolder.listFiles();
+                    } catch (Exception e) {
+                        Log.e(TAG, "startScannerDevice: " + "usbRootFolder.listFiles() error:" + e);
+                        isOperatingDevice = false;
+                        sendBroadcastForUploadApk(12);
+                        return;
+                    }
+
+                    if (usbFileList != null) {
+                        for (UsbFile usbFileItem : usbFileList) {
+                            if (usbFileItem.getName().contains(wifiConfigurationFileName)) {
+                                parseWifiConfiguration(usbFileItem);
+                            } else if (usbFileItem.getName().contains(usbUpdateBin)) {
+                                parseBinAPK(usbFileItem, fileSystem);
                             }
-                            deviceId = usbDevice.getDeviceId();
-                            Log.e(TAG, "run: deviceId =" + deviceId);
-                        } catch (Exception e) {
-                            Log.e(TAG, "usbConnect for file list Exception =" + e);
                         }
-                        try {
-                            device.close();
-                        } catch (Exception e) {
-                            Log.e(TAG, "run: device.close Exception =" + e);
-                        }
-                        sendBroadcastForUploadApk(false, 6);
                     }
+                    isOperatingDevice = false;
+                    completedScanner = true;
+                    sendBroadcastForUploadApk(13);
+                } else {
+                    Log.e(TAG, "startScannerDevice: 授权失败");
+                    isOperatingDevice = false;
+                    sendBroadcastForUploadApk(14);
                 }
-                sendBroadcastForUploadApk(false, 7);
             }
         });
     }
 
 
-    private void sendBroadcastForUploadApk(boolean initing, int position) {
-        isInitingUSB = initing;
+    private void sendBroadcastForUploadApk(int position) {
         try {
             Intent intent = new Intent(BroadcastIntent);
-            intent.putExtra(BroadcastInitingUSB, initing);
+            intent.putExtra(BroadcastInitingUSB, isOperatingDevice);
             intent.putExtra("position", position);
             sendOrderedBroadcast(intent, null);
         } catch (Exception e) {
@@ -1087,19 +1110,6 @@ public class MainActivity extends Activity {
     }
 
 
-    private synchronized void stopStoreUSBInitThreadExecutor() {
-        Log.e(TAG, "stopStoreUSBInitThreadExecutor:start ");
-        try {
-            if (initStoreUSBThreadExecutor != null) {
-                initStoreUSBThreadExecutor.shutdown();
-            }
-        } catch (Exception e) {
-        }
-        initStoreUSBThreadExecutor = null;
-
-        Log.d(TAG, "stopStoreUSBInitThreadExecutor: end");
-    }
-
     private void netWorkConnect() {
         Log.d(TAG, "netWorkConnect: ");
         netWorkonAvailableBroadcast = true;
@@ -1168,8 +1178,6 @@ public class MainActivity extends Activity {
                     profileModel.imei = imei;
                     saveProfileModel(profileModel);
                 } else {
-
-
                     ProfileModel profileModel = getProfileModel();
                     if (profileModel != null) {
                         imei = profileModel.SN;
@@ -1339,8 +1347,7 @@ public class MainActivity extends Activity {
 
     private static final int msg_network_connect = 1;
     private static final int msg_resend_mqtt = 2;
-    private static final int msg_get_permission_timeout = 3;
-    private static final int msg_heatbeat_timeout = 4;
+    private static final int msg_heatbeat_timeout = 3;
 
 
     @SuppressLint("HandlerLeak")
@@ -1355,10 +1362,6 @@ public class MainActivity extends Activity {
                     if (msg.obj != null) {
                         publishMessage((String) msg.obj);
                     }
-                    break;
-                case msg_get_permission_timeout:
-                    sendBroadcastForUploadApk(false, 9);
-                    initStoreUSBDevice();
                     break;
                 case msg_heatbeat_timeout:
                     remoteAppIsRuning = false;
