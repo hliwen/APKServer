@@ -18,8 +18,8 @@ android {
         applicationId "com.remoteupload.apkserver"
         minSdkVersion 21
         targetSdkVersion 21
-        versionCode 24020501
-        versionName "v1.0.29"
+        versionCode 24021804
+        versionName "v1.0.32"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

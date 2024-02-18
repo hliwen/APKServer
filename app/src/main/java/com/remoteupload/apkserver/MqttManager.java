@@ -125,7 +125,7 @@ public class MqttManager {
         }
     }
 
-    public void publish(String topicName, int qos, String payload) {
+    public boolean publish(String topicName, int qos, String payload) {
         if (client != null && client.isConnected()) {
             // 创建和配置一个消息
             MqttMessage message = new MqttMessage(payload.getBytes());
@@ -133,10 +133,12 @@ public class MqttManager {
             message.setQos(qos);
             try {
                 client.publish(topicName, message);
+                return true;
             } catch (MqttException e) {
                 Log.e(TAG, "MqttManager publish : " + e.toString());
             }
         }
+        return false;
     }
 
 
